@@ -1,0 +1,37 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+class CreatePurchaseOrderDocumentsTable extends Migration
+{
+    /**
+     * Run the migrations.
+     *
+     * @return void
+     */
+    public function up()
+    {
+        Schema::create('purchase_order_documents', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('purchase_order_id')->constrained('purchase_orders')->onDelete('cascade');
+            $table->string('document_name'); // Nama dokumen (misal: PO, Invoice, dll)
+            $table->string('file_path');     // Lokasi file di storage
+            $table->string('file_type')->nullable(); // pdf, docx, xlsx, jpg, dll
+            $table->integer('file_size')->nullable(); // ukuran file (byte)
+            $table->text('description')->nullable();  // keterangan tambahan
+            $table->timestamps();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     *
+     * @return void
+     */
+    public function down()
+    {
+        Schema::dropIfExists('purchase_order_documents');
+    }
+}
