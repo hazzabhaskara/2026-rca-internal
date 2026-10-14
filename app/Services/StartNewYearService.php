@@ -4,12 +4,14 @@ namespace App\Services;
 
 use App\ChartOfAccount;
 use App\JournalEntry;
+use App\linkedAccounts;
 use Illuminate\Support\Facades\DB;
 
 class StartNewYearService
 {
     /**
      * Proses start new year untuk update laba tahun berjalan secara berpasangan (Double-Entry Balanced)
+     * Menggunakan akun RETAINED EARNINGS (id=746, kode_akun=3200000) dari linked_accounts modul setup.
      */
     public function updateLabaTahunBerjalan(int $tahunLama): void
     {
@@ -39,11 +41,11 @@ class StartNewYearService
                 return;
             }
 
-            // 4. Ambil akun Laba Tahun Berjalan (level_akun = 'X') & Laba Ditahan (Retained Earnings)
-            $akunLabaBerjalan = ChartOfAccount::where('level_akun', 'X')->first();
-            $akunLabaDitahan = ChartOfAccount::where('tipe_akun', 'Ekuitas')
-                ->where('nama_akun', 'like', '%Laba Ditahan%')
-                ->first() ?? $akunLabaBerjalan;
+            // 4. Ambil akun Laba Tahun Berjalan (level_akun = 'X', mis. 3104000) & Laba Ditahan (Retained Earnings 3200000)
+            $akunLabaBerjalan = ChartOfAccount::where('level_akun', 'X')->first()
+                ?? ChartOfAccount::where('kode_akun', '3104000')->first();
+
+            $akunLabaDitahan = $this->resolveRetainedEarningsAccount() ?? $akunLabaBerjalan;
 
             if (!$akunLabaBerjalan) {
                 throw new \Exception('Akun dengan level "X" (Laba Tahun Berjalan) tidak ditemukan.');
@@ -52,7 +54,7 @@ class StartNewYearService
             $nominal = abs($labaTahunBerjalan);
 
             if ($labaTahunBerjalan > 0) {
-                // Laba Bersih: Debit Ikhtisar/Laba Tahun Berjalan, Credit Laba Ditahan
+                // Laba Bersih: Debit Ikhtisar/Laba Tahun Berjalan, Credit Laba Ditahan (3200000)
                 $jurnal->details()->create([
                     'departemen_akun_id' => null,
                     'kode_akun'          => $akunLabaBerjalan->kode_akun,
@@ -68,7 +70,7 @@ class StartNewYearService
                     'comment'            => 'Pemindahan laba bersih ke laba ditahan ' . $tahunLama,
                 ]);
             } else {
-                // Rugi Bersih: Debit Laba Ditahan, Credit Ikhtisar/Laba Tahun Berjalan
+                // Rugi Bersih: Debit Laba Ditahan (3200000), Credit Ikhtisar/Laba Tahun Berjalan
                 $jurnal->details()->create([
                     'departemen_akun_id' => null,
                     'kode_akun'          => $akunLabaDitahan->kode_akun,
@@ -85,6 +87,30 @@ class StartNewYearService
                 ]);
             }
         });
+    }
+
+    /**
+     * Resolve akun Laba Ditahan (Retained Earnings) sesuai verifikasi DB lokal:
+     * 1. linked_accounts (modul = 'setup', UPPER(kode) = 'RETAINED EARNINGS' -> akun_id 746 / 3200000)
+     * 2. ChartOfAccount kode_akun = '3200000'
+     * 3. Fallback ke ChartOfAccount Ekuitas dengan nama Laba Ditahan (urut kode_akun DESC agar 3200000 terpilih)
+     */
+    protected function resolveRetainedEarningsAccount(): ?ChartOfAccount
+    {
+        $linked = linkedAccounts::with('akun')
+            ->whereRaw('LOWER(modul) = ?', ['setup'])
+            ->whereRaw('UPPER(kode) = ?', ['RETAINED EARNINGS'])
+            ->first();
+
+        if ($linked && $linked->akun) {
+            return $linked->akun;
+        }
+
+        return ChartOfAccount::where('kode_akun', '3200000')->first()
+            ?? ChartOfAccount::where('tipe_akun', 'Ekuitas')
+                ->where('nama_akun', 'like', '%Laba Ditahan%')
+                ->orderBy('kode_akun', 'desc')
+                ->first();
     }
 
     /**

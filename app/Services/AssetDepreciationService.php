@@ -8,6 +8,7 @@ use App\Departement;
 use App\IntangibleAsset;
 use App\JournalEntry;
 use App\JournalEntryDetail;
+use App\KategoriAsset;
 use App\linkedAccounts;
 use App\Lokasi;
 use App\TangibleAsset;
@@ -20,24 +21,45 @@ class AssetDepreciationService
      * Map Location keywords to Department codes (0001 - 0009).
      */
     public const LOCATION_DEPT_MAP = [
-        'BANDUNG' => '0001',
-        'PUSAT'   => '0001',
-        'BDG'     => '0001',
-        'DUFAN'   => '0002',
-        'DFN'     => '0002',
-        'ODS'     => '0003',
-        'SAMUDRA' => '0003',
-        'AWA'     => '0004',
-        'ATLANTIS'=> '0004',
-        'JBL'     => '0005',
-        'BIRD'    => '0005',
-        'PBN'     => '0006',
-        'PBS'     => '0006',
-        'SQP'     => '0007',
-        'SCIENTIA'=> '0007',
-        'GOWET'   => '0008',
-        'GWT'     => '0008',
-        'EMO'     => '0009',
+        'BANDUNG'  => '0001',
+        'PUSAT'    => '0001',
+        'BDG'      => '0001',
+        'DUFAN'    => '0002',
+        'DFN'      => '0002',
+        'ODS'      => '0003',
+        'SAMUDRA'  => '0003',
+        'AWA'      => '0004',
+        'ATLANTIS' => '0004',
+        'JBL'      => '0005',
+        'BIRD'     => '0005',
+        'PBN'      => '0006',
+        'PBS'      => '0006',
+        'SQP'      => '0007',
+        'SCIENTIA' => '0007',
+        'GOWET'    => '0008',
+        'GWT'      => '0008',
+        'EMO'      => '0009',
+    ];
+
+    /**
+     * Map Asset Category keywords to exact COA codes in rembulancitraabadi_2026_db:
+     * - BANGUNAN   : Expense 5313001 (PENYUSUTAN BANGUNAN), Accum 1202002 (AK PENYUSUTAN BANGUNAN)
+     * - KENDARAAN  : Expense 5313002 (PENYUSUTAN KENDARAAN), Accum 1203002 (AK PENYUSUTAN KENDARAAN)
+     * - INVENTARIS : Expense 5313003 (PENYUSUTAN INVENTARIS), Accum 1204002 (AK PENYUSUTAN INVENTARIS)
+     * - SISTEM     : Expense 5314002 (AMORTISASI SISTEM), Accum 1302002 (AK AMORTISASI SISTEM)
+     */
+    public const CATEGORY_COA_MAP = [
+        'BANGUNAN'   => ['expense' => '5313001', 'accum' => '1202002'],
+        'GEDUNG'     => ['expense' => '5313001', 'accum' => '1202002'],
+        'KENDARAAN'  => ['expense' => '5313002', 'accum' => '1203002'],
+        'MOBIL'      => ['expense' => '5313002', 'accum' => '1203002'],
+        'MOTOR'      => ['expense' => '5313002', 'accum' => '1203002'],
+        'INVENTARIS' => ['expense' => '5313003', 'accum' => '1204002'],
+        'PERALATAN'  => ['expense' => '5313003', 'accum' => '1204002'],
+        'MESIN'      => ['expense' => '5313003', 'accum' => '1204002'],
+        'SISTEM'     => ['expense' => '5314002', 'accum' => '1302002'],
+        'SOFTWARE'   => ['expense' => '5314002', 'accum' => '1302002'],
+        'LISENSI'    => ['expense' => '5314002', 'accum' => '1302002'],
     ];
 
     /**
@@ -59,21 +81,23 @@ class AssetDepreciationService
             throw new \RuntimeException("Periode akuntansi untuk tanggal {$postingDate} sudah ditutup (Closed).");
         }
 
-        $tangibleExpenseCoa = $this->resolveDepreciationExpenseAccount(false);
-        $intangibleExpenseCoa = $this->resolveDepreciationExpenseAccount(true);
-        $accumCoa = $this->resolveAccumulatedDepreciationAccount();
+        $defaultTangibleExpense = $this->resolveDepreciationExpenseAccount(false);
+        $defaultIntangibleExpense = $this->resolveDepreciationExpenseAccount(true);
+        $defaultTangibleAccum = $this->resolveAccumulatedDepreciationAccount(false);
+        $defaultIntangibleAccum = $this->resolveAccumulatedDepreciationAccount(true);
 
-        if (!$tangibleExpenseCoa || !$accumCoa) {
-            throw new \RuntimeException('Akun Beban Penyusutan (5313xxx) atau Akumulasi Penyusutan (121xxxx) belum tersedia di Chart of Accounts / Linked Accounts Asset.');
+        if (!$defaultTangibleExpense || !$defaultTangibleAccum) {
+            throw new \RuntimeException('Akun Beban Penyusutan (5313xxx) atau Akumulasi Penyusutan (1202002/1203002/1204002) belum tersedia di Chart of Accounts.');
         }
 
         return DB::transaction(function () use (
             $periodObj,
             $postingDate,
             $source,
-            $tangibleExpenseCoa,
-            $intangibleExpenseCoa,
-            $accumCoa
+            $defaultTangibleExpense,
+            $defaultIntangibleExpense,
+            $defaultTangibleAccum,
+            $defaultIntangibleAccum
         ) {
             // Hapus jurnal penyusutan bulan yang sama jika sudah pernah digenerate (idempotent)
             $existing = JournalEntry::where('source', $source)->first();
@@ -86,17 +110,28 @@ class AssetDepreciationService
             $totalAmount = 0.0;
 
             // 1. Proses Tangible Assets (Aset Tetap Berwujud)
-            $tangibleAssets = TangibleAsset::with(['lokasi', 'golongan', 'metode_penyusutan'])->get();
+            $tangibleAssets = TangibleAsset::with(['kategori', 'lokasi', 'golongan', 'metode_penyusutan'])->get();
             foreach ($tangibleAssets as $asset) {
+                if ($this->isNonDepreciableLand($asset->kategori)) {
+                    continue; // Tanah (1201001) tidak disusutkan
+                }
+
                 $monthlyDep = $this->calculateAssetMonthlyAmount($asset, $periodObj, false);
                 if ($monthlyDep <= 0) {
                     continue;
                 }
 
+                [$expCoa, $accCoa] = $this->resolveAccountsForCategory(
+                    $asset->kategori,
+                    false,
+                    $defaultTangibleExpense,
+                    $defaultTangibleAccum
+                );
+
                 $deptId = $this->resolveDepartemenIdFromLokasi($asset->lokasi);
                 $lines[] = [
-                    'expense_coa' => $tangibleExpenseCoa,
-                    'accum_coa'   => $accumCoa,
+                    'expense_coa' => $expCoa,
+                    'accum_coa'   => $accCoa,
                     'dept_id'     => $deptId,
                     'amount'      => $monthlyDep,
                     'comment'     => "Penyusutan Aset Tetap {$asset->kode_asset} - {$asset->nama_asset} ({$periodObj->format('M Y')})",
@@ -105,17 +140,24 @@ class AssetDepreciationService
             }
 
             // 2. Proses Intangible Assets (Aset Tak Berwujud)
-            $intangibleAssets = IntangibleAsset::with(['lokasi', 'golongan', 'metode_penyusutan'])->get();
+            $intangibleAssets = IntangibleAsset::with(['kategori', 'lokasi', 'golongan', 'metode_penyusutan'])->get();
             foreach ($intangibleAssets as $asset) {
                 $monthlyAmort = $this->calculateAssetMonthlyAmount($asset, $periodObj, true);
                 if ($monthlyAmort <= 0) {
                     continue;
                 }
 
+                [$expCoa, $accCoa] = $this->resolveAccountsForCategory(
+                    $asset->kategori,
+                    true,
+                    $defaultIntangibleExpense ?? $defaultTangibleExpense,
+                    $defaultIntangibleAccum ?? $defaultTangibleAccum
+                );
+
                 $deptId = $this->resolveDepartemenIdFromLokasi($asset->lokasi);
                 $lines[] = [
-                    'expense_coa' => $intangibleExpenseCoa ?? $tangibleExpenseCoa,
-                    'accum_coa'   => $accumCoa,
+                    'expense_coa' => $expCoa,
+                    'accum_coa'   => $accCoa,
                     'dept_id'     => $deptId,
                     'amount'      => $monthlyAmort,
                     'comment'     => "Amortisasi Aset Tak Berwujud {$asset->kode_asset} - {$asset->nama_asset} ({$periodObj->format('M Y')})",
@@ -148,7 +190,7 @@ class AssetDepreciationService
                 $expDeptAkunId = $this->ensureDepartemenAkun($expCoa->id, $deptId);
                 $accDeptAkunId = $this->ensureDepartemenAkun($accCoa->id, $deptId);
 
-                // Debit Beban Penyusutan / Amortisasi (5313xxx / 5314xxx)
+                // Debit Beban Penyusutan / Amortisasi (5313001/5313002/5313003/5314002)
                 JournalEntryDetail::create([
                     'journal_entry_id'   => $journal->id,
                     'kode_akun'          => $expCoa->kode_akun,
@@ -159,7 +201,7 @@ class AssetDepreciationService
                     'comment'            => $line['comment'],
                 ]);
 
-                // Credit Akumulasi Penyusutan / Amortisasi (121xxxx)
+                // Credit Akumulasi Penyusutan / Amortisasi (1202002/1203002/1204002/1302002)
                 JournalEntryDetail::create([
                     'journal_entry_id'   => $journal->id,
                     'kode_akun'          => $accCoa->kode_akun,
@@ -187,6 +229,38 @@ class AssetDepreciationService
         });
     }
 
+    protected function isNonDepreciableLand(?KategoriAsset $kategori): bool
+    {
+        if (!$kategori) {
+            return false;
+        }
+        $haystack = strtoupper(trim(($kategori->kode_kategori ?? '') . ' ' . ($kategori->nama_kategori ?? '')));
+        return strpos($haystack, 'TANAH') !== false;
+    }
+
+    /**
+     * Resolve specific Expense & Accumulated Depreciation COA based on KategoriAsset name/code.
+     */
+    protected function resolveAccountsForCategory(
+        ?KategoriAsset $kategori,
+        bool $isIntangible,
+        ChartOfAccount $defaultExpense,
+        ChartOfAccount $defaultAccum
+    ): array {
+        if ($kategori) {
+            $haystack = strtoupper(trim(($kategori->kode_kategori ?? '') . ' ' . ($kategori->nama_kategori ?? '')));
+            foreach (self::CATEGORY_COA_MAP as $keyword => $codes) {
+                if (strpos($haystack, $keyword) !== false) {
+                    $exp = ChartOfAccount::where('kode_akun', $codes['expense'])->first() ?? $defaultExpense;
+                    $acc = ChartOfAccount::where('kode_akun', $codes['accum'])->first() ?? $defaultAccum;
+                    return [$exp, $acc];
+                }
+            }
+        }
+
+        return [$defaultExpense, $defaultAccum];
+    }
+
     /**
      * Calculate monthly depreciation/amortization amount for a single asset.
      */
@@ -202,14 +276,14 @@ class AssetDepreciationService
             try {
                 $acqDate = Carbon::parse($asset->tanggal_perolehan)->startOfMonth();
                 if ($acqDate->gt($periodEnd)) {
-                    return 0.0; // Belum diperoleh pada periode ini
+                    return 0.0;
                 }
 
                 $usefulYears = (int) ($asset->dalam_tahun ?? optional($asset->golongan)->masa_tahun ?? 0);
                 if ($usefulYears > 0) {
                     $monthsElapsed = $acqDate->diffInMonths($periodEnd->copy()->startOfMonth());
                     if ($monthsElapsed >= ($usefulYears * 12)) {
-                        return 0.0; // Masa manfaat sudah habis
+                        return 0.0;
                     }
                 }
             } catch (\Throwable $e) {
@@ -252,6 +326,15 @@ class AssetDepreciationService
 
     protected function resolveDepreciationExpenseAccount(bool $isIntangible = false): ?ChartOfAccount
     {
+        if ($isIntangible) {
+            $amortCoa = ChartOfAccount::whereIn('kode_akun', ['5314002', '5314001', '5313999'])
+                ->orderBy('kode_akun', 'desc')
+                ->first();
+            if ($amortCoa) {
+                return $amortCoa;
+            }
+        }
+
         $linked = linkedAccounts::with('akun')
             ->where('modul', 'asset')
             ->where('kode', 'Expenses')
@@ -261,28 +344,27 @@ class AssetDepreciationService
             return $linked->akun;
         }
 
-        if ($isIntangible) {
-            $amortCoa = ChartOfAccount::where(function ($q) {
-                $q->where('kode_akun', 'like', '5314%')
-                  ->orWhere('kode_akun', '5313999')
-                  ->orWhere('kode_akun', 'like', '5304%');
-            })->orderBy('kode_akun')->first();
-
-            if ($amortCoa) {
-                return $amortCoa;
-            }
-        }
-
-        return ChartOfAccount::where(function ($q) {
-            $q->where('kode_akun', 'like', '5313%')
-              ->orWhere('kode_akun', 'like', '5303%');
-        })->orderBy('kode_akun')->first()
+        return ChartOfAccount::whereIn('kode_akun', ['5313003', '5313002', '5313001'])
+            ->orderBy('kode_akun', 'desc')
+            ->first()
+            ?? ChartOfAccount::where('kode_akun', 'like', '5313%')
+                ->where('level_akun', '!=', 'HEADER')
+                ->orderBy('kode_akun', 'desc')
+                ->first()
             ?? optional($linked)->akun
             ?? ChartOfAccount::where('tipe_akun', 'Beban')->orderBy('kode_akun')->first();
     }
 
-    protected function resolveAccumulatedDepreciationAccount(): ?ChartOfAccount
+    protected function resolveAccumulatedDepreciationAccount(bool $isIntangible = false): ?ChartOfAccount
     {
+        if ($isIntangible) {
+            $amortAccum = ChartOfAccount::where('kode_akun', '1302002')->first()
+                ?? ChartOfAccount::where('nama_akun', 'like', '%AK AMORTISASI%')->first();
+            if ($amortAccum) {
+                return $amortAccum;
+            }
+        }
+
         $linked = linkedAccounts::with('akun')
             ->where('modul', 'asset')
             ->where('kode', 'Accumulated Depreciation/Amortisation')
@@ -292,12 +374,15 @@ class AssetDepreciationService
             return $linked->akun;
         }
 
-        return ChartOfAccount::whereBetween('kode_akun', ['1210000', '1299999'])
-            ->orderBy('kode_akun')
+        // Sesuai COA rembulancitraabadi_2026_db: 1204002 (AK PENYUSUTAN INVENTARIS), 1203002 (KENDARAAN), 1202002 (BANGUNAN)
+        return ChartOfAccount::whereIn('kode_akun', ['1204002', '1203002', '1202002', '1302002'])
+            ->orderBy('kode_akun', 'desc')
             ->first()
-            ?? ChartOfAccount::where('nama_akun', 'like', '%Akumulasi Penyusutan%')
-                ->orderBy('kode_akun')
-                ->first();
+            ?? ChartOfAccount::where(function ($q) {
+                $q->where('nama_akun', 'like', '%AK PENYUSUTAN%')
+                  ->orWhere('nama_akun', 'like', '%Akumulasi Penyusutan%')
+                  ->orWhere('nama_akun', 'like', '%AK AMORTISASI%');
+            })->orderBy('kode_akun')->first();
     }
 
     public function resolveDepartemenIdFromLokasi(?Lokasi $lokasi): ?int
