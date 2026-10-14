@@ -170,7 +170,7 @@ class AssignedWatchdogTier5AdversarialTest extends TestCase
     /**
      * Helper to create a journal entry with a specific source and date.
      */
-    protected function createJournalEntry(string $source, string $tanggal = '2025-06-15', string $comment = 'Tier 5 Stress Test'): JournalEntry
+    protected function createJournalEntry(string $source, string $tanggal = '2026-06-15', string $comment = 'Tier 5 Stress Test'): JournalEntry
     {
         return JournalEntry::create([
             'source'  => $source,
@@ -843,7 +843,7 @@ class AssignedWatchdogTier5AdversarialTest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $je = $this->createJournalEntry('GEN-ATOMIC-REASSIGN-017', '2025-06-15');
+            $je = $this->createJournalEntry('GEN-ATOMIC-REASSIGN-017', '2026-06-15');
             $lines = [];
             for ($i = 0; $i < 12; $i++) {
                 $lines[] = $this->createDetail($je, $this->deptPusat);
@@ -895,7 +895,7 @@ class AssignedWatchdogTier5AdversarialTest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $je = $this->createJournalEntry('GEN-ATOMIC-UNASSIGN-018', '2025-06-15');
+            $je = $this->createJournalEntry('GEN-ATOMIC-UNASSIGN-018', '2026-06-15');
             $lines = [];
             for ($i = 0; $i < 12; $i++) {
                 $lines[] = $this->createDetail($je, $this->deptDufan);
@@ -942,7 +942,7 @@ class AssignedWatchdogTier5AdversarialTest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $jeOpen = $this->createJournalEntry('GEN-OPEN-BATCH-019', '2025-06-15');
+            $jeOpen = $this->createJournalEntry('GEN-OPEN-BATCH-019', '2026-06-15');
             $jeClosed = $this->createJournalEntry('GEN-CLOSED-BATCH-019', '2024-05-15'); // 2024 is closed
 
             $lines = [];
@@ -1001,7 +1001,7 @@ class AssignedWatchdogTier5AdversarialTest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $jeOpen = $this->createJournalEntry('GEN-OPEN-UNASSIGN-020', '2025-06-15');
+            $jeOpen = $this->createJournalEntry('GEN-OPEN-UNASSIGN-020', '2026-06-15');
             $jeClosed = $this->createJournalEntry('GEN-CLOSED-UNASSIGN-020', '2024-05-15');
 
             $lines = [];
@@ -1048,36 +1048,36 @@ class AssignedWatchdogTier5AdversarialTest extends TestCase
     // =========================================================================
 
     /**
-     * ADV-21: Year transition boundary: 2024-12-31 23:59:59 (closed) vs 2025-01-01 00:00:00 (open).
+     * ADV-21: Year transition boundary: 2025-12-31 23:59:59 (closed) vs 2026-01-01 00:00:00 (open).
      */
     public function test_adv_21_date_boundary_year_transition_closed_vs_open()
     {
         // Check service date evaluation directly
         $this->assertTrue(
-            $this->assignmentService->isPeriodClosed('2024-12-31 23:59:59'),
-            "2024-12-31 23:59:59 must be recognized as CLOSED period"
+            $this->assignmentService->isPeriodClosed('2025-12-31 23:59:59'),
+            "2025-12-31 23:59:59 must be recognized as CLOSED period"
         );
         $this->assertTrue(
-            $this->assignmentService->isPeriodClosed('2024-12-31'),
-            "2024-12-31 must be recognized as CLOSED period"
+            $this->assignmentService->isPeriodClosed('2025-12-31'),
+            "2025-12-31 must be recognized as CLOSED period"
         );
 
         $this->assertFalse(
-            $this->assignmentService->isPeriodClosed('2025-01-01 00:00:00'),
-            "2025-01-01 00:00:00 must be recognized as OPEN period"
+            $this->assignmentService->isPeriodClosed('2026-01-01 00:00:00'),
+            "2026-01-01 00:00:00 must be recognized as OPEN period"
         );
         $this->assertFalse(
-            $this->assignmentService->isPeriodClosed('2025-01-01'),
-            "2025-01-01 must be recognized as OPEN period"
+            $this->assignmentService->isPeriodClosed('2026-01-01'),
+            "2026-01-01 must be recognized as OPEN period"
         );
 
         // Integration with API endpoints
         DB::beginTransaction();
         try {
-            $jeClosed = $this->createJournalEntry('TRANSITION-CLOSED', '2024-12-31 23:59:59');
+            $jeClosed = $this->createJournalEntry('TRANSITION-CLOSED', '2025-12-31 23:59:59');
             $lineClosed = $this->createDetail($jeClosed, $this->deptPusat);
 
-            $jeOpen = $this->createJournalEntry('TRANSITION-OPEN', '2025-01-01 00:00:00');
+            $jeOpen = $this->createJournalEntry('TRANSITION-OPEN', '2026-01-01 00:00:00');
             $lineOpen = $this->createDetail($jeOpen, $this->deptPusat);
 
             // 1. Staff cannot reassign closed period without override
@@ -1188,10 +1188,10 @@ class AssignedWatchdogTier5AdversarialTest extends TestCase
     public function test_adv_24_date_boundary_future_open_dates()
     {
         $openDates = [
-            '2025-01-02',
-            '2025-06-30',
-            '2025-12-31',
-            '2026-01-01',
+            '2026-01-02',
+            '2026-06-30',
+            '2026-12-31',
+            '2027-01-01',
         ];
 
         foreach ($openDates as $date) {
@@ -1203,7 +1203,7 @@ class AssignedWatchdogTier5AdversarialTest extends TestCase
 
         DB::beginTransaction();
         try {
-            $je = $this->createJournalEntry('OPEN-FUTURE-024', '2025-07-20');
+            $je = $this->createJournalEntry('OPEN-FUTURE-024', '2026-07-20');
             $line = $this->createDetail($je, $this->deptPusat);
 
             $resStaff = $this->actingAs($this->staffUser)->postJson(route('assigned_watchdog.unassign'), [

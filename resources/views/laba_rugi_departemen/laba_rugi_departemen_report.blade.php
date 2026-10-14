@@ -447,6 +447,17 @@
                     </svg>
                     <span>Focus Mode</span>
                 </button>
+
+                {{-- Direct Drilldown to Buku Besar with Active Filter & Back URL --}}
+                <a href="{{ route('buku_besar.buku_besar_report', [
+                    'start_date' => $startDate,
+                    'end_date' => $endDate,
+                    'selected_accounts' => request('selected_accounts', ''),
+                    'departemen_id' => request('departemen_id', ''),
+                    'back_url' => request()->fullUrl()
+                ]) }}" class="ctrl-btn" id="btnDrilldownBukuBesar" title="Buka Buku Besar untuk Periode Ini">
+                    <span>Buku Besar</span>
+                </a>
             @endif
         </div>
 
@@ -657,7 +668,8 @@
                                                     <a href="{{ route('buku_besar.buku_besar_report', [
                                                         'start_date' => $startDate,
                                                         'end_date' => $endDate,
-                                                        'selected_accounts' => $accCode
+                                                        'selected_accounts' => $accCode,
+                                                        'back_url' => request()->fullUrl()
                                                     ]) }}" target="_blank" class="drilldown-link {{ $totVal < 0 ? 'num-negative' : 'num-positive' }}">
                                                         {{ $totVal < 0 ? '(' . number_format(abs($totVal), 2, ',', '.') . ')' : number_format($totVal, 2, ',', '.') }}
                                                     </a>
@@ -674,7 +686,8 @@
                                                             'start_date' => $startDate,
                                                             'end_date' => $endDate,
                                                             'selected_accounts' => $accCode,
-                                                            'departemen_id' => $d->id
+                                                            'departemen_id' => $d->id,
+                                                            'back_url' => request()->fullUrl()
                                                         ]) }}" target="_blank" class="drilldown-link {{ $dVal < 0 ? 'num-negative' : 'num-positive' }}">
                                                             {{ $dVal < 0 ? '(' . number_format(abs($dVal), 2, ',', '.') . ')' : number_format($dVal, 2, ',', '.') }}
                                                         </a>
@@ -696,7 +709,8 @@
                                                         'start_date' => $startDate,
                                                         'end_date' => $endDate,
                                                         'selected_accounts' => $accCode,
-                                                        'departemen_id' => 'unassigned'
+                                                        'departemen_id' => 'unassigned',
+                                                        'back_url' => request()->fullUrl()
                                                     ]) }}" target="_blank" class="drilldown-link {{ $unVal < 0 ? 'num-negative' : 'num-positive' }}">
                                                         {{ $unVal < 0 ? '(' . number_format(abs($unVal), 2, ',', '.') . ')' : number_format($unVal, 2, ',', '.') }}
                                                     </a>
@@ -734,7 +748,8 @@
                                                                 <a href="{{ route('buku_besar.buku_besar_report', [
                                                                     'start_date' => $startDate,
                                                                     'end_date' => $endDate,
-                                                                    'selected_accounts' => $subCode
+                                                                    'selected_accounts' => $subCode,
+                                                                    'back_url' => request()->fullUrl()
                                                                 ]) }}" target="_blank" class="drilldown-link {{ $subTot < 0 ? 'num-negative' : 'num-positive' }}">
                                                                     {{ $subTot < 0 ? '(' . number_format(abs($subTot), 2, ',', '.') . ')' : number_format($subTot, 2, ',', '.') }}
                                                                 </a>
@@ -751,7 +766,8 @@
                                                                         'start_date' => $startDate,
                                                                         'end_date' => $endDate,
                                                                         'selected_accounts' => $subCode,
-                                                                        'departemen_id' => $d->id
+                                                                        'departemen_id' => $d->id,
+                                                                        'back_url' => request()->fullUrl()
                                                                     ]) }}" target="_blank" class="drilldown-link {{ $subValD < 0 ? 'num-negative' : 'num-positive' }}">
                                                                         {{ $subValD < 0 ? '(' . number_format(abs($subValD), 2, ',', '.') . ')' : number_format($subValD, 2, ',', '.') }}
                                                                     </a>
@@ -773,7 +789,8 @@
                                                                     'start_date' => $startDate,
                                                                     'end_date' => $endDate,
                                                                     'selected_accounts' => $subCode,
-                                                                    'departemen_id' => 'unassigned'
+                                                                    'departemen_id' => 'unassigned',
+                                                                    'back_url' => request()->fullUrl()
                                                                 ]) }}" target="_blank" class="drilldown-link {{ $subUnass < 0 ? 'num-negative' : 'num-positive' }}">
                                                                     {{ $subUnass < 0 ? '(' . number_format(abs($subUnass), 2, ',', '.') . ')' : number_format($subUnass, 2, ',', '.') }}
                                                                 </a>
@@ -905,6 +922,7 @@
                                 $singleLinkParams = [
                                     'start_date' => $startDate,
                                     'end_date' => $endDate,
+                                    'back_url' => request()->fullUrl(),
                                 ];
                                 if ($selectedDeptId === 'unassigned') {
                                     $singleLinkParams['departemen_id'] = 'unassigned';

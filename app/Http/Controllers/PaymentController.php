@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\ChartOfAccount;
 use App\JournalEntry;
+use App\linkedAccounts;
 use App\PaymentMethod;
 use App\Payment;
 use App\PaymentDetail;
@@ -17,19 +18,20 @@ use Illuminate\Support\Facades\DB;
 
 class PaymentController extends Controller
 {
-    //
     public function index()
     {
         $data = Payment::with(['jenis_pembayaran', 'vendor', 'PaymentMethodAccount'])->orderBy('payment_date')->paginate(10);
         return view('payment.index', compact('data'));
     }
+
     public function create()
     {
         $vendor = Vendors::all();
         $jenis_pembayaran = PaymentMethod::all();
-        $account = chartOfAccount::all();
+        $account = ChartOfAccount::all();
         return view('payment.create', compact('vendor', 'account', 'jenis_pembayaran'));
     }
+
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -52,34 +54,31 @@ class PaymentController extends Controller
                 'vendor_id' => $validated['vendor_id'],
                 'payment_date' => $validated['payment_date'],
                 'comment' => $validated['comment'] ?? null,
-                'type' => 'invoice', // bisa nanti diganti 'other' jika dibutuhkan
+                'type' => 'invoice',
             ]);
 
-            // dump('✅ Payment created:', $payment->toArray());
             // 2️⃣ Simpan detail pembayaran (PaymentDetail)
             if ($request->has('payment_amount')) {
                 foreach ($request->payment_amount as $invoiceId => $amount) {
-                    if ($amount > 0) {
+                    $cleanAmount = (float) str_replace(['.', ','], ['', '.'], (string) $amount);
+                    if ($cleanAmount > 0) {
                         $invoice = PurchaseInvoice::with('details')->find($invoiceId);
+                        if (!$invoice) {
+                            continue;
+                        }
 
                         PaymentDetail::create([
                             'payment_id' => $payment->id,
                             'invoice_number_id' => $invoice->id,
                             'due_date' => $invoice->due_date ?? null,
-                            'original_amount' => $invoice->original_amount, // computed accessor
+                            'original_amount' => $invoice->original_amount,
                             'amount_owing' => $invoice->amount_owing ?? 0,
                             'discount_available' => $invoice->discount_available ?? 0,
                             'discount_taken' => 0,
-                            'payment_amount' => $amount,
+                            'payment_amount' => $cleanAmount,
                         ]);
 
-                        // 🔹 Update status invoice setelah pembayaran
                         $invoice->updatePaymentStatus();
-                        // dump('🔄 Status invoice setelah update:', [
-                        //     'invoice_id' => $invoice->id,
-                        //     'status_purchase' => $invoice->status_purchase,
-
-                        // ]);
                     }
                 }
             }
@@ -87,24 +86,20 @@ class PaymentController extends Controller
             // 3️⃣ Simpan alokasi prepayment (jika ada)
             if ($request->has('prepayment_allocations')) {
                 foreach ($request->prepayment_allocations as $prepaymentId => $amount) {
-                    if ($amount > 0) {
+                    $cleanAlloc = (float) str_replace(['.', ','], ['', '.'], (string) $amount);
+                    if ($cleanAlloc > 0) {
                         $relatedInvoiceId = $request->invoice_for_prepayment[$prepaymentId] ?? null;
                         if ($relatedInvoiceId) {
                             PrepaymentAllocation::create([
-                                'payment_id'         => $payment->id,
-                                'prepayment_id'        => $prepaymentId,
-                                'purchase_invoice_id'  => $relatedInvoiceId,
-                                'allocated_amount'     => $amount,
+                                'payment_id'          => $payment->id,
+                                'prepayment_id'       => $prepaymentId,
+                                'purchase_invoice_id' => $relatedInvoiceId,
+                                'allocated_amount'    => $cleanAlloc,
                             ]);
 
-                            // 🔹 Update status invoice juga
                             $invoice = PurchaseInvoice::find($relatedInvoiceId);
                             if ($invoice) {
                                 $invoice->updatePaymentStatus();
-                                // dump('🔄 Status invoice (dari prepayment):', [
-                                //     'invoice_id' => $invoice->id,
-                                //     'status_purchase' => $invoice->status_purchase,
-                                // ]);
                             }
                         }
                     }
@@ -115,63 +110,104 @@ class PaymentController extends Controller
             $journal = JournalEntry::create([
                 'source'  => 'Payment#' . $payment->id,
                 'tanggal' => $validated['payment_date'],
-                'comment' => $validated['comment'] ?? null,
+                'comment' => $validated['comment'] ?? ('Payment #' . $payment->id),
             ]);
 
-            // 4A️⃣ Akun Kas/Bank (Credit)
+            // 4A️⃣ Akun Kas/Bank (Credit hanya untuk porsi kas yang benar-benar keluar)
             $pmDetail = PaymentMethodDetail::with('chartOfAccount')->find($validated['payment_method_account_id']);
-            $coaPayment = optional($pmDetail->chartOfAccount);
+            $coaPayment = optional($pmDetail)->chartOfAccount;
 
-            $totalDebit = 0;
+            // Fallback akun Hutang Usaha (Account Payable) dari Linked Accounts
+            $apLinked = linkedAccounts::with('akun')
+                ->where('modul', 'purchases')
+                ->where('kode', 'Account Payable')
+                ->first();
+            $defaultApCode = optional(optional($apLinked)->akun)->kode_akun;
 
-            // 4B️⃣ Debit untuk setiap invoice
+            $prepayLinked = linkedAccounts::with('akun')
+                ->where('modul', 'purchases')
+                ->where('kode', 'Prepayments Prepaid Orders')
+                ->first();
+            $defaultPrepayCode = optional(optional($prepayLinked)->akun)->kode_akun;
+
+            $totalCashPaid = 0.0;
+
+            // 4B️⃣ Debit Hutang Usaha untuk setiap invoice yang dibayar via Kas/Bank
             if ($request->has('payment_amount')) {
                 foreach ($request->payment_amount as $invoiceId => $amount) {
-                    if ($amount > 0) {
+                    $cleanAmount = (float) str_replace(['.', ','], ['', '.'], (string) $amount);
+                    if ($cleanAmount > 0) {
                         $invoice = PurchaseInvoice::with('paymentmethodDetail.chartOfAccount')->find($invoiceId);
-                        $coaDebit = optional($invoice->paymentmethodDetail->chartOfAccount);
+                        $coaDebit = optional(optional($invoice)->paymentmethodDetail)->chartOfAccount;
+                        $kodeAkunDebit = $coaDebit->kode_akun ?? $defaultApCode;
 
                         $journal->details()->create([
-                            'kode_akun' => $coaDebit->kode_akun ?? null,
-                            'debits' => $amount,
-                            'credits' => 0,
-                            'status' => 2,
-                            'comment' => 'Pembayaran invoice ' . ($invoice->invoice_number ?? $invoiceId),
+                            'kode_akun' => $kodeAkunDebit,
+                            'debits'    => $cleanAmount,
+                            'credits'   => 0,
+                            'status'    => 2,
+                            'comment'   => 'Pembayaran invoice ' . ($invoice->invoice_number ?? $invoiceId),
                         ]);
 
-                        $totalDebit += $amount;
+                        $totalCashPaid += $cleanAmount;
                     }
                 }
             }
 
-            // 4C️⃣ Debit untuk setiap prepayment
+            // 4C️⃣ Alokasi Prepayment (REA Duality Fix: Debit Hutang Usaha Invoice, Credit Akun Uang Muka/Prepayment)
+            // Tidak boleh menambah $totalCashPaid karena kas sudah keluar saat Prepayment dibuat.
             if ($request->has('prepayment_allocations')) {
                 foreach ($request->prepayment_allocations as $prepaymentId => $amount) {
-                    if ($amount > 0) {
-                        $prepayment = Prepayment::with('accountPrepayment')->find($prepaymentId);
-                        $coaDebit = optional($prepayment->accountPrepayment);
+                    $cleanAlloc = (float) str_replace(['.', ','], ['', '.'], (string) $amount);
+                    if ($cleanAlloc > 0) {
+                        $relatedInvoiceId = $request->invoice_for_prepayment[$prepaymentId] ?? null;
+                        $relatedInvoice = $relatedInvoiceId
+                            ? PurchaseInvoice::with('paymentmethodDetail.chartOfAccount')->find($relatedInvoiceId)
+                            : null;
+                        $prepayment = Prepayment::with(['accountPrepayment', 'account'])->find($prepaymentId);
 
+                        $apAccountCode = optional(optional($relatedInvoice)->paymentmethodDetail)->chartOfAccount->kode_akun
+                            ?? $defaultApCode;
+
+                        $prepayAccountCode = optional(optional($prepayment)->accountPrepayment)->kode_akun
+                            ?? optional(optional($prepayment)->account)->kode_akun
+                            ?? $defaultPrepayCode;
+
+                        // Debit: Kurangi Hutang Usaha atas Invoice terkait
                         $journal->details()->create([
-                            'kode_akun' => $coaDebit->kode_akun ?? null,
-                            'debits' => $amount,
-                            'credits' => 0,
-                            'comment' => 'Alokasi prepayment ' . ($prepayment->reference ?? $prepaymentId),
-                            'status' => 2
+                            'kode_akun' => $apAccountCode,
+                            'debits'    => $cleanAlloc,
+                            'credits'   => 0,
+                            'comment'   => 'Alokasi prepayment ke invoice ' . ($relatedInvoice->invoice_number ?? $relatedInvoiceId),
+                            'status'    => 2,
                         ]);
 
-                        $totalDebit += $amount;
+                        // Credit: Kurangi saldo Uang Muka Pembelian (Prepayment Asset)
+                        $journal->details()->create([
+                            'kode_akun' => $prepayAccountCode,
+                            'debits'    => 0,
+                            'credits'   => $cleanAlloc,
+                            'comment'   => 'Realisasi alokasi prepayment ' . ($prepayment->reference ?? $prepaymentId),
+                            'status'    => 2,
+                        ]);
                     }
                 }
             }
 
-            // 4D️⃣ Credit total Kas/Bank
-            $journal->details()->create([
-                'kode_akun' => $coaPayment->kode_akun ?? null,
-                'debits' => 0,
-                'credits' => $totalDebit,
-                'comment' => 'Pembayaran melalui ' . ($coaPayment->nama_akun ?? 'Kas/Bank'),
-                'status' => 2
-            ]);
+            // 4D️⃣ Credit Kas/Bank hanya sebesar uang kas yang keluar pada pembayaran ini
+            if ($totalCashPaid > 0) {
+                $journal->details()->create([
+                    'kode_akun' => $coaPayment->kode_akun ?? null,
+                    'debits'    => 0,
+                    'credits'   => $totalCashPaid,
+                    'comment'   => 'Pembayaran melalui ' . ($coaPayment->nama_akun ?? 'Kas/Bank'),
+                    'status'    => 2,
+                ]);
+            }
+
+            if (function_exists('logActivity')) {
+                logActivity("Create Payment #{$payment->id} (Source: " . ($payment->source ?? '-') . ")");
+            }
 
             DB::commit();
 
@@ -189,18 +225,18 @@ class PaymentController extends Controller
     {
         $data = Payment::with(['vendor', 'jenis_pembayaran', 'PaymentMethodAccount', 'details'])->findOrFail($id);
 
-        $purchase_invoice = db::table('payments')
+        $purchase_invoice = DB::table('payments')
             ->leftJoin('payment_details', 'payments.id', '=', 'payment_details.payment_id')
             ->leftJoin('purchase_invoices', 'payment_details.invoice_number_id', '=', 'purchase_invoices.id')
             ->where('payments.id', $id)
             ->select('purchase_invoices.invoice_number')
             ->first();
 
-
         $invoice_number = $purchase_invoice->invoice_number ?? null;
 
         return view('payment.show', compact('data', 'invoice_number'));
     }
+
     public function edit($id)
     {
         $data = Payment::with([
@@ -215,7 +251,6 @@ class PaymentController extends Controller
         $vendor = Vendors::all();
         $jenis_pembayaran = PaymentMethod::all();
 
-        // 🧮 Hitung ulang amount untuk setiap detail invoice
         foreach ($data->details as $detail) {
             $totalAmount = 0;
             $amount = 0;
@@ -238,10 +273,8 @@ class PaymentController extends Controller
                 ->sum('payment_amount');
 
             $detail->original_amount = $totalAmount;
-
             $detail->amount_owing = $totalAmount - $totalPaid;
         }
-
 
         $prepaymentAllocations = $data->prepaymentAllocations->map(function ($alloc) {
             $invoice = $alloc->purchaseInvoice;
@@ -265,7 +298,6 @@ class PaymentController extends Controller
 
         return view('payment.edit', compact('data', 'vendor', 'jenis_pembayaran', 'prepaymentAllocations'));
     }
-
 
     public function destroy($id)
     {
@@ -296,14 +328,17 @@ class PaymentController extends Controller
             }
 
             $payment->details()->delete();
-
             $payment->delete();
 
             foreach ($affectedInvoices->unique() as $invoiceId) {
                 $invoice = \App\PurchaseInvoice::find($invoiceId);
                 if ($invoice) {
-                    $invoice->updatePaymentStatus(); // 
+                    $invoice->updatePaymentStatus();
                 }
+            }
+
+            if (function_exists('logActivity')) {
+                logActivity("Delete Payment #{$id}");
             }
 
             DB::commit();

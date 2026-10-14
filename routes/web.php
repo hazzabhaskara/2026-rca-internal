@@ -657,6 +657,7 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('masa_manfaat', 'MasaManfaatController')->middleware('permission:masa_manfaat.access');
     Route::resource('metode_penyusutan', 'MetodePenyusutanController')->middleware('permission:metode_penyusutan.access');
 
+    Route::post('tangible_asset/depreciate', 'TangibleAssetController@runDepreciation')->name('tangible_asset.depreciate')->middleware('permission:tangible_asset.access');
     Route::resource('tangible_asset', 'TangibleAssetController')->middleware('permission:tangible_asset.access');
     Route::get('/export/TangibleAsset', [ExportController::class, 'exportTangibleAsset'])->name('export.TangibleAsset');
     Route::post('/import/TangibleAsset', [ImportController::class, 'importTangibleAsset'])->name('import.TangibleAsset');

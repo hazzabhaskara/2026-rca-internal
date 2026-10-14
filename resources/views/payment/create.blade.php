@@ -547,33 +547,52 @@
                     debitAccountName = '';
 
                 if (isPrepayment) {
-                    // Prepayment row
-                    debitAccountCode = row.data('prepayment-account-code');
-                    debitAccountName = row.data('prepayment-account-name');
-                    debugMessages.push(`Prepayment → ${debitAccountCode} - ${debitAccountName}, Amount: ${val}`);
+                    // REA Fix: Alokasi Prepayment mendebit Hutang Usaha (dari Invoice terkait) dan mengkredit Akun Prepayment
+                    const appliedInvId = row.find('.invoice-for-prepayment').val();
+                    const appliedInvRow = appliedInvId ? $(`tr.invoice-row[data-invoice-id="${appliedInvId}"]`) : $('.invoice-row').first();
+                    debitAccountCode = appliedInvRow.data('header-account-code') || 'AP';
+                    debitAccountName = appliedInvRow.data('header-account-name') || 'Accounts Payable';
+                    const prepayCode = row.data('prepayment-account-code') || '';
+                    const prepayName = row.data('prepayment-account-name') || 'Prepayment';
+                    debugMessages.push(`Prepayment Allocation → Dr ${debitAccountCode} (${debitAccountName}) / Cr ${prepayCode} (${prepayName}), Amount: ${val}`);
+
+                    rows.push({
+                        accountCode: debitAccountCode,
+                        account: debitAccountName,
+                        debit: val,
+                        credit: 0
+                    });
+                    totalDebit += val;
+
+                    rows.push({
+                        accountCode: prepayCode,
+                        account: prepayName,
+                        debit: 0,
+                        credit: val
+                    });
+                    totalCredit += val;
                 } else {
-                    // Invoice row
+                    // Invoice row (Cash/Bank payment)
                     debitAccountCode = row.data('header-account-code');
                     debitAccountName = row.data('header-account-name');
-                    debugMessages.push(`Invoice → ${debitAccountCode} - ${debitAccountName}, Amount: ${val}`);
+                    debugMessages.push(`Invoice → Dr ${debitAccountCode} - ${debitAccountName} / Cr ${pmAccountName}, Amount: ${val}`);
+
+                    rows.push({
+                        accountCode: debitAccountCode,
+                        account: debitAccountName,
+                        debit: val,
+                        credit: 0
+                    });
+                    totalDebit += val;
+
+                    rows.push({
+                        accountCode: pmAccountCode,
+                        account: pmAccountName,
+                        debit: 0,
+                        credit: val
+                    });
+                    totalCredit += val;
                 }
-
-                // Baris debit
-                rows.push({
-                    accountCode: debitAccountCode,
-                    account: debitAccountName,
-                    debit: val,
-                    credit: 0
-                });
-                totalDebit += val;
-
-                // Baris kredit
-                rows.push({
-                    account: pmAccountName,
-                    debit: 0,
-                    credit: val
-                });
-                totalCredit += val;
             });
 
             // Render hasil

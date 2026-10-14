@@ -55,7 +55,8 @@ class DepartmentAssignmentServiceTest extends TestCase
                 'tanggal' => '2024-10-15',
                 'comment' => 'Test Closed Entry',
             ]);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => 1]);
+            $defaultAkunId = \App\ChartOfAccount::value('id') ?? 1;
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $defaultAkunId, 'departemen_id' => 1]);
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
                 'departemen_akun_id' => $da->id,
@@ -66,6 +67,11 @@ class DepartmentAssignmentServiceTest extends TestCase
         }
 
         return $detail;
+    }
+
+    protected function getOpenYear(): int
+    {
+        return DB::table('start_new_years')->where('status', 'Opening')->value('tahun') ?? 2026;
     }
 
     // =========================================================================
@@ -82,9 +88,9 @@ class DepartmentAssignmentServiceTest extends TestCase
 
     public function testIsPeriodClosedReturnsFalseForOpenPeriodDates()
     {
-        // 2025 is opening in start_new_years
-        $this->assertFalse($this->service->isPeriodClosed('2025-06-15'));
-        $this->assertFalse($this->service->isPeriodClosed('2025-12-31'));
+        $openYear = $this->getOpenYear();
+        $this->assertFalse($this->service->isPeriodClosed("{$openYear}-06-15"));
+        $this->assertFalse($this->service->isPeriodClosed("{$openYear}-12-31"));
     }
 
     // =========================================================================
@@ -157,9 +163,10 @@ class DepartmentAssignmentServiceTest extends TestCase
 
     public function testReassignUpdatesDepartemenAkunIdAndCreatesAuditLog()
     {
+        $openYear = $this->getOpenYear();
         // Find an open period detail that is already assigned
-        $detail = JournalEntryDetail::whereHas('journalEntry', function ($q) {
-            $q->where('tanggal', '>=', '2025-01-01');
+        $detail = JournalEntryDetail::whereHas('journalEntry', function ($q) use ($openYear) {
+            $q->where('tanggal', '>=', "{$openYear}-01-01");
         })->whereNotNull('departemen_akun_id')->firstOrFail();
 
         $currentDeptId = $detail->departemenAkun->departemen_id;
@@ -198,15 +205,16 @@ class DepartmentAssignmentServiceTest extends TestCase
 
     public function testReassignSetsInitialAssignActionTypeWhenPreviouslyUnassigned()
     {
+        $openYear = $this->getOpenYear();
         // Find or create an unassigned detail in open period
-        $detail = JournalEntryDetail::whereHas('journalEntry', function ($q) {
-            $q->where('tanggal', '>=', '2025-01-01');
+        $detail = JournalEntryDetail::whereHas('journalEntry', function ($q) use ($openYear) {
+            $q->where('tanggal', '>=', "{$openYear}-01-01");
         })->whereNull('departemen_akun_id')->first();
 
         if (!$detail) {
             // Pick an assigned detail and set departemen_akun_id to null for test
-            $detail = JournalEntryDetail::whereHas('journalEntry', function ($q) {
-                $q->where('tanggal', '>=', '2025-01-01');
+            $detail = JournalEntryDetail::whereHas('journalEntry', function ($q) use ($openYear) {
+                $q->where('tanggal', '>=', "{$openYear}-01-01");
             })->firstOrFail();
             $detail->departemen_akun_id = null;
             $detail->save();
@@ -324,9 +332,10 @@ class DepartmentAssignmentServiceTest extends TestCase
 
     public function testUnassignDetachesDepartmentAndCreatesAuditLog()
     {
+        $openYear = $this->getOpenYear();
         // Find an open period detail that is currently assigned
-        $detail = JournalEntryDetail::whereHas('journalEntry', function ($q) {
-            $q->where('tanggal', '>=', '2025-01-01');
+        $detail = JournalEntryDetail::whereHas('journalEntry', function ($q) use ($openYear) {
+            $q->where('tanggal', '>=', "{$openYear}-01-01");
         })->whereNotNull('departemen_akun_id')->firstOrFail();
 
         $oldDeptId = $detail->departemenAkun->departemen_id;
@@ -370,9 +379,10 @@ class DepartmentAssignmentServiceTest extends TestCase
 
     public function testReassignBulkUpdatesMultipleDetailsAtomically()
     {
-        // Get 3 assigned details from 2025
-        $details = JournalEntryDetail::whereHas('journalEntry', function ($q) {
-            $q->where('tanggal', '>=', '2025-01-01');
+        $openYear = $this->getOpenYear();
+        // Get 3 assigned details from open period
+        $details = JournalEntryDetail::whereHas('journalEntry', function ($q) use ($openYear) {
+            $q->where('tanggal', '>=', "{$openYear}-01-01");
         })->whereNotNull('departemen_akun_id')->limit(3)->get();
 
         $this->assertCount(3, $details);
@@ -408,9 +418,10 @@ class DepartmentAssignmentServiceTest extends TestCase
 
     public function testReassignBulkRollsBackAtomicallyWhenClosedPeriodEncountered()
     {
+        $openYear = $this->getOpenYear();
         // 1 open detail and 1 closed detail
-        $openDetail = JournalEntryDetail::whereHas('journalEntry', function ($q) {
-            $q->where('tanggal', '>=', '2025-01-01');
+        $openDetail = JournalEntryDetail::whereHas('journalEntry', function ($q) use ($openYear) {
+            $q->where('tanggal', '>=', "{$openYear}-01-01");
         })->whereNotNull('departemen_akun_id')->firstOrFail();
 
         $closedDetail = $this->getClosedPeriodDetail();
@@ -442,9 +453,10 @@ class DepartmentAssignmentServiceTest extends TestCase
 
     public function testUnassignBulkDetachesMultipleDetailsAtomically()
     {
-        // Get 2 assigned details from 2025
-        $details = JournalEntryDetail::whereHas('journalEntry', function ($q) {
-            $q->where('tanggal', '>=', '2025-01-01');
+        $openYear = $this->getOpenYear();
+        // Get 2 assigned details from open period
+        $details = JournalEntryDetail::whereHas('journalEntry', function ($q) use ($openYear) {
+            $q->where('tanggal', '>=', "{$openYear}-01-01");
         })->whereNotNull('departemen_akun_id')->limit(2)->get();
 
         $this->assertCount(2, $details);
@@ -476,8 +488,9 @@ class DepartmentAssignmentServiceTest extends TestCase
 
     public function testUnassignBulkRollsBackAtomicallyWhenClosedPeriodEncountered()
     {
-        $openDetail = JournalEntryDetail::whereHas('journalEntry', function ($q) {
-            $q->where('tanggal', '>=', '2025-01-01');
+        $openYear = $this->getOpenYear();
+        $openDetail = JournalEntryDetail::whereHas('journalEntry', function ($q) use ($openYear) {
+            $q->where('tanggal', '>=', "{$openYear}-01-01");
         })->whereNotNull('departemen_akun_id')->firstOrFail();
 
         $closedDetail = $this->getClosedPeriodDetail();
@@ -510,9 +523,31 @@ class DepartmentAssignmentServiceTest extends TestCase
 
     public function testDepartmentAssignmentLogRelationshipsAndScopes()
     {
+        $openYear = $this->getOpenYear();
         $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')
+            ->whereHas('journalEntry', function ($q) use ($openYear) {
+                $q->where('tanggal', '>=', "{$openYear}-01-01");
+            })
             ->whereNotIn('id', DepartmentAssignmentLog::pluck('journal_entry_detail_id'))
-            ->first() ?? $this->getClosedPeriodDetail();
+            ->first();
+
+        if (!$detail) {
+            $je = JournalEntry::create([
+                'source'  => 'OPEN-SCOPE-TEST',
+                'tanggal' => "{$openYear}-05-01",
+                'comment' => 'Test Open Entry for scopes',
+            ]);
+            $defaultAkunId = \App\ChartOfAccount::value('id') ?? 1;
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $defaultAkunId, 'departemen_id' => 1]);
+            $detail = JournalEntryDetail::create([
+                'journal_entry_id'   => $je->id,
+                'departemen_akun_id' => $da->id,
+                'kode_akun'          => '1101001',
+                'debits'             => 50000,
+                'credits'            => 0,
+            ]);
+        }
+
         $targetDept = Departement::where('id', '!=', $detail->departemenAkun->departemen_id)->firstOrFail();
 
         $result = $this->service->reassign($detail->id, $targetDept->id, 'Model relationship test', $this->adminUser);

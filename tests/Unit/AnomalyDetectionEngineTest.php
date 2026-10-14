@@ -43,6 +43,9 @@ class AnomalyDetectionEngineTest extends TestCase
     /** @var Departement */
     protected $deptEmo;
 
+    /** @var int */
+    protected $defaultAkunId;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -59,6 +62,8 @@ class AnomalyDetectionEngineTest extends TestCase
         $this->deptSqp   = Departement::find(7) ?? Departement::where('kode', '0007')->firstOrFail();
         $this->deptGowet = Departement::find(8) ?? Departement::where('kode', '0008')->firstOrFail();
         $this->deptEmo   = Departement::find(9) ?? Departement::where('kode', '0009')->firstOrFail();
+
+        $this->defaultAkunId = ChartOfAccount::value('id') ?? 1;
     }
 
     protected function tearDown(): void
@@ -79,7 +84,7 @@ class AnomalyDetectionEngineTest extends TestCase
         ]);
 
         $account = ChartOfAccount::where('kode_akun', $kodeAkun)->first();
-        $akunId = $account ? $account->id : 1;
+        $akunId = $account ? $account->id : $this->defaultAkunId;
 
         $da = DepartemenAkun::firstOrCreate([
             'akun_id'       => $akunId,
@@ -305,8 +310,8 @@ class AnomalyDetectionEngineTest extends TestCase
     public function testRule2FlagsOutlierRowDivergingFromVoucherMajority()
     {
         $je = JournalEntry::create(['source' => 'PAYROLL-MULTI-DEPT', 'tanggal' => '2025-10-15']);
-        $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptDufan->id]);
-        $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+        $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptDufan->id]);
+        $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
 
         // 5 lines in DUFAN
         for ($i = 0; $i < 5; $i++) {
@@ -337,8 +342,8 @@ class AnomalyDetectionEngineTest extends TestCase
     public function testRule2DoesNotFlagMajorityRowsInMultiDepartmentVoucher()
     {
         $je = JournalEntry::create(['source' => 'PAYROLL-MAJORITY-CHECK', 'tanggal' => '2025-10-15']);
-        $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptDufan->id]);
-        $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+        $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptDufan->id]);
+        $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
 
         $majorityRows = [];
         for ($i = 0; $i < 5; $i++) {
@@ -370,7 +375,7 @@ class AnomalyDetectionEngineTest extends TestCase
     public function testRule2DoesNotFlagHomogeneousSingleDepartmentVouchers()
     {
         $je = JournalEntry::create(['source' => 'VOUCHER-HOMOGENEOUS-ODS', 'tanggal' => '2025-10-15']);
-        $daOds = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptOds->id]);
+        $daOds = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptOds->id]);
 
         $rows = [];
         for ($i = 0; $i < 4; $i++) {
@@ -395,8 +400,8 @@ class AnomalyDetectionEngineTest extends TestCase
     public function testRule2DoesNotFlagEqualTieVouchers()
     {
         $je = JournalEntry::create(['source' => 'EQUAL-TIE-2-VS-2', 'tanggal' => '2025-10-15']);
-        $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptDufan->id]);
-        $daOds   = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptOds->id]);
+        $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptDufan->id]);
+        $daOds   = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptOds->id]);
 
         $rows = [];
         for ($i = 0; $i < 2; $i++) {
@@ -427,9 +432,9 @@ class AnomalyDetectionEngineTest extends TestCase
     public function testRule2HandlesThreeWayEqualTie()
     {
         $je = JournalEntry::create(['source' => 'THREE-WAY-TIE', 'tanggal' => '2025-10-15']);
-        $da1 = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptDufan->id]);
-        $da2 = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptOds->id]);
-        $da3 = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptJbl->id]);
+        $da1 = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptDufan->id]);
+        $da2 = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptOds->id]);
+        $da3 = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptJbl->id]);
 
         $rows = [
             JournalEntryDetail::create(['journal_entry_id' => $je->id, 'departemen_akun_id' => $da1->id, 'kode_akun' => '1101001', 'debits' => 10000]),
@@ -450,9 +455,9 @@ class AnomalyDetectionEngineTest extends TestCase
     public function testRule2FlagsMultipleMinorityDepartmentsInPluralityVoucher()
     {
         $je = JournalEntry::create(['source' => 'PLURALITY-CHECK', 'tanggal' => '2025-10-15']);
-        $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptDufan->id]);
-        $daOds   = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptOds->id]);
-        $daJbl   = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptJbl->id]);
+        $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptDufan->id]);
+        $daOds   = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptOds->id]);
+        $daJbl   = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptJbl->id]);
 
         // Dominant: DUFAN has 4 lines
         for ($i = 0; $i < 4; $i++) {

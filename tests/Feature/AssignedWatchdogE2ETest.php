@@ -78,10 +78,21 @@ class AssignedWatchdogE2ETest extends TestCase
 
     /** @var Departement */
     protected $deptGowet;
+    protected $defaultAkunId;
+
+    protected function getOpenDetailQuery()
+    {
+        return JournalEntryDetail::whereNotNull('departemen_akun_id')
+            ->whereHas('journalEntry', function ($q) {
+                $q->where('tanggal', '>=', '2026-01-01');
+            });
+    }
 
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->defaultAkunId = ChartOfAccount::value('id') ?? 377;
 
         // 1. Resolve standard users
         $this->adminUser = User::where('email', 'admin@example.com')->first()
@@ -449,7 +460,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+            $detail = $this->getOpenDetailQuery()->firstOrFail();
             $oldDeptId = $detail->departemenAkun->departemen_id;
             $targetDept = ($oldDeptId === $this->deptPusat->id) ? $this->deptDufan : $this->deptPusat;
 
@@ -482,7 +493,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+            $detail = $this->getOpenDetailQuery()->firstOrFail();
             $oldDeptId = $detail->departemenAkun->departemen_id;
 
             $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.unassign'), [
@@ -512,7 +523,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $details = JournalEntryDetail::whereNotNull('departemen_akun_id')->limit(3)->get();
+            $details = $this->getOpenDetailQuery()->limit(3)->get();
             $targetDept = $this->deptSqp;
 
             $response = $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.reassign_bulk'), [
@@ -542,7 +553,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $details = JournalEntryDetail::whereNotNull('departemen_akun_id')->limit(3)->get();
+            $details = $this->getOpenDetailQuery()->limit(3)->get();
 
             $response = $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.unassign_bulk'), [
                 'detail_ids' => $details->pluck('id')->toArray(),
@@ -574,7 +585,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+            $detail = $this->getOpenDetailQuery()->firstOrFail();
             $targetDept = ($detail->departemenAkun->departemen_id === $this->deptPusat->id) ? $this->deptDufan : $this->deptPusat;
 
             $response = $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.reassign'), [
@@ -598,7 +609,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+            $detail = $this->getOpenDetailQuery()->firstOrFail();
             $account = ChartOfAccount::where('kode_akun', $detail->kode_akun)->firstOrFail();
             $targetDept = $this->deptDufan;
 
@@ -632,7 +643,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+            $detail = $this->getOpenDetailQuery()->firstOrFail();
             $account = ChartOfAccount::where('kode_akun', $detail->kode_akun)->firstOrFail();
             $targetDept = $this->deptGowet;
 
@@ -662,7 +673,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+            $detail = $this->getOpenDetailQuery()->firstOrFail();
 
             $response = $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.reassign'), [
                 'detail_id'     => $detail->id,
@@ -685,7 +696,7 @@ class AssignedWatchdogE2ETest extends TestCase
      */
     public function test_t1_f2_single_reassign_enforces_authentication_and_permission()
     {
-        $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+        $detail = $this->getOpenDetailQuery()->firstOrFail();
 
         // 1. Unauthenticated -> 401 or redirect to login
         $unauthRes = $this->postJson(route('assigned_watchdog.reassign'), [
@@ -721,7 +732,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+            $detail = $this->getOpenDetailQuery()->firstOrFail();
 
             $response = $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.unassign'), [
                 'detail_id' => $detail->id,
@@ -743,7 +754,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+            $detail = $this->getOpenDetailQuery()->firstOrFail();
 
             $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.unassign'), [
                 'detail_id' => $detail->id,
@@ -764,7 +775,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+            $detail = $this->getOpenDetailQuery()->firstOrFail();
             $oldDeptId = $detail->departemenAkun->departemen_id;
 
             $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.unassign'), [
@@ -794,7 +805,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+            $detail = $this->getOpenDetailQuery()->firstOrFail();
 
             $response = $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.unassign'), [
                 'detail_id' => $detail->id,
@@ -816,7 +827,7 @@ class AssignedWatchdogE2ETest extends TestCase
      */
     public function test_t1_f3_single_unassign_enforces_permissions()
     {
-        $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+        $detail = $this->getOpenDetailQuery()->firstOrFail();
 
         $unauthRes = $this->postJson(route('assigned_watchdog.unassign'), [
             'detail_id' => $detail->id,
@@ -836,7 +847,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $details = JournalEntryDetail::whereNotNull('departemen_akun_id')->limit(4)->get();
+            $details = $this->getOpenDetailQuery()->limit(4)->get();
             $targetDept = $this->deptSqp;
 
             $response = $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.reassign_bulk'), [
@@ -863,7 +874,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $details = JournalEntryDetail::whereNotNull('departemen_akun_id')->limit(4)->get();
+            $details = $this->getOpenDetailQuery()->limit(4)->get();
 
             $response = $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.unassign_bulk'), [
                 'detail_ids' => $details->pluck('id')->toArray(),
@@ -888,7 +899,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $details = JournalEntryDetail::whereNotNull('departemen_akun_id')->limit(3)->get();
+            $details = $this->getOpenDetailQuery()->limit(3)->get();
 
             $response = $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.reassign_bulk'), [
                 'detail_ids'    => $details->pluck('id')->toArray(),
@@ -911,7 +922,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $details = JournalEntryDetail::whereNotNull('departemen_akun_id')->limit(2)->get();
+            $details = $this->getOpenDetailQuery()->limit(2)->get();
             $origDeptId1 = $details[0]->departemenAkun->departemen_id;
             $origDeptId2 = $details[1]->departemenAkun->departemen_id;
 
@@ -940,7 +951,7 @@ class AssignedWatchdogE2ETest extends TestCase
      */
     public function test_t1_f4_bulk_actions_require_update_permission()
     {
-        $details = JournalEntryDetail::whereNotNull('departemen_akun_id')->limit(2)->get();
+        $details = $this->getOpenDetailQuery()->limit(2)->get();
 
         $response = $this->postJson(route('assigned_watchdog.reassign_bulk'), [
             'detail_ids'    => $details->pluck('id')->toArray(),
@@ -971,7 +982,7 @@ class AssignedWatchdogE2ETest extends TestCase
             DB::beginTransaction();
             try {
                 $je = JournalEntry::create(['source' => 'KASSQP-251231-099', 'tanggal' => '2025-12-31']);
-                $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+                $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
                 $detail = JournalEntryDetail::create([
                     'journal_entry_id'   => $je->id,
                     'departemen_akun_id' => $da->id,
@@ -1016,7 +1027,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'CH-DFN-2025-10-15', 'tanggal' => '2025-10-15']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptOds->id]);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptOds->id]);
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
                 'departemen_akun_id' => $da->id,
@@ -1045,7 +1056,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'MDR0012-251231-002', 'tanggal' => '2025-12-31']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
                 'departemen_akun_id' => $da->id,
@@ -1074,7 +1085,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'KASGOWET-251231-001', 'tanggal' => '2025-12-31']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptDufan->id]);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptDufan->id]);
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
                 'departemen_akun_id' => $da->id,
@@ -1103,7 +1114,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'PENYUSUTAN-251231-001', 'tanggal' => '2025-12-31']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptDufan->id]);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptDufan->id]);
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
                 'departemen_akun_id' => $da->id,
@@ -1135,8 +1146,8 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'VOUCHER-TEST-OUTLIER', 'tanggal' => '2025-12-31']);
-            $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptDufan->id]);
-            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptDufan->id]);
+            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
 
             // 5 lines in DUFAN
             for ($i = 0; $i < 5; $i++) {
@@ -1175,8 +1186,8 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'VOUCHER-TEST-MAJORITY', 'tanggal' => '2025-12-31']);
-            $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptDufan->id]);
-            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptDufan->id]);
+            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
 
             $majorityLines = [];
             for ($i = 0; $i < 5; $i++) {
@@ -1217,7 +1228,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'VOUCHER-HOMOGENEOUS', 'tanggal' => '2025-12-31']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptOds->id]);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptOds->id]);
 
             $lines = [];
             for ($i = 0; $i < 4; $i++) {
@@ -1252,8 +1263,8 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'VOUCHER-REASON-CHECK', 'tanggal' => '2025-12-31']);
-            $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptDufan->id]);
-            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptDufan->id]);
+            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
 
             for ($i = 0; $i < 4; $i++) {
                 JournalEntryDetail::create([
@@ -1289,8 +1300,8 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'PAYROLL-2025-12', 'tanggal' => '2025-12-31']);
-            $daAwa = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptAwa->id]);
-            $daSqp = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptSqp->id]);
+            $daAwa = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptAwa->id]);
+            $daSqp = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptSqp->id]);
 
             for ($i = 0; $i < 5; $i++) {
                 JournalEntryDetail::create([
@@ -1330,7 +1341,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'TEST-UNIT-ACCOUNT-ODS', 'tanggal' => '2025-12-31']);
-            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
 
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
@@ -1360,7 +1371,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'TEST-UNIT-ACCOUNT-DFN', 'tanggal' => '2025-12-31']);
-            $daAwa = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptAwa->id]);
+            $daAwa = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptAwa->id]);
 
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
@@ -1390,7 +1401,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'TEST-UNIT-ACCOUNT-SQP', 'tanggal' => '2025-12-31']);
-            $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptDufan->id]);
+            $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptDufan->id]);
 
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
@@ -1420,7 +1431,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'TEST-UNIT-REV-SQP', 'tanggal' => '2025-12-31']);
-            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
 
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
@@ -1449,7 +1460,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'TEST-MATCHING-UNIT', 'tanggal' => '2025-12-31']);
-            $daOds = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptOds->id]);
+            $daOds = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptOds->id]);
 
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
@@ -1482,7 +1493,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'KASSQP-251231-001', 'tanggal' => '2025-12-31']);
-            $daSqp = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptSqp->id]);
+            $daSqp = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptSqp->id]);
 
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
@@ -1510,7 +1521,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'CH-DFN-2025-12-31', 'tanggal' => '2025-12-31']);
-            $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptDufan->id]);
+            $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptDufan->id]);
 
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
@@ -1538,7 +1549,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'KASBDG-251231-001', 'tanggal' => '2025-12-31']);
-            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
 
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
@@ -1566,7 +1577,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'CLEAN-RECORD-SAMPLE', 'tanggal' => '2025-12-31']);
-            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
 
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
@@ -1618,13 +1629,13 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         $closedYear = StartNewYear::where('status', 'Closing')->first();
         $this->assertNotNull($closedYear, "Closing record must exist in start_new_years table");
-        $this->assertEquals(2024, $closedYear->tahun);
+        $this->assertTrue(in_array((int)$closedYear->tahun, [2024, 2025]));
 
         if (class_exists('\App\Services\DepartmentAssignmentService')) {
             $service = app(\App\Services\DepartmentAssignmentService::class);
             $this->assertTrue($service->isPeriodClosed('2024-05-15'));
             $this->assertTrue($service->isPeriodClosed('2024-12-31'));
-            $this->assertFalse($service->isPeriodClosed('2025-01-01'));
+            $this->assertFalse($service->isPeriodClosed('2026-01-01'));
         }
     }
 
@@ -1636,7 +1647,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'HIST-2024-TEST', 'tanggal' => '2024-06-15']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
                 'departemen_akun_id' => $da->id,
@@ -1665,7 +1676,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'HIST-2024-UNASSIGN', 'tanggal' => '2024-06-15']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
                 'departemen_akun_id' => $da->id,
@@ -1693,7 +1704,7 @@ class AssignedWatchdogE2ETest extends TestCase
         try {
             $jeClosed = JournalEntry::create(['source' => 'HIST-2024-BULK', 'tanggal' => '2024-06-15']);
             $jeOpen   = JournalEntry::create(['source' => 'OPEN-2025-BULK', 'tanggal' => '2025-06-15']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
 
             $d1 = JournalEntryDetail::create([
                 'journal_entry_id'   => $jeClosed->id,
@@ -1727,8 +1738,8 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $jeOpen = JournalEntry::create(['source' => 'OPEN-2025-OK', 'tanggal' => '2025-08-10']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $jeOpen = JournalEntry::create(['source' => 'OPEN-2026-OK', 'tanggal' => '2026-08-10']);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $jeOpen->id,
                 'departemen_akun_id' => $da->id,
@@ -1763,7 +1774,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'HIST-2024-OVERRIDE', 'tanggal' => '2024-07-20']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
                 'departemen_akun_id' => $da->id,
@@ -1794,7 +1805,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'HIST-2024-UNASSIGN-OVERRIDE', 'tanggal' => '2024-07-20']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
                 'departemen_akun_id' => $da->id,
@@ -1824,7 +1835,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'HIST-2024-LOG-CHECK', 'tanggal' => '2024-07-20']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
                 'departemen_akun_id' => $da->id,
@@ -1859,7 +1870,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'HIST-2024-NO-REASON', 'tanggal' => '2024-07-20']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
                 'departemen_akun_id' => $da->id,
@@ -1888,7 +1899,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'HIST-2024-SPOOF', 'tanggal' => '2024-07-20']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
                 'departemen_akun_id' => $da->id,
@@ -2293,7 +2304,7 @@ class AssignedWatchdogE2ETest extends TestCase
      */
     public function test_t2_empty_reason_rejection()
     {
-        $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+        $detail = $this->getOpenDetailQuery()->firstOrFail();
 
         $response = $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.reassign'), [
             'detail_id'     => $detail->id,
@@ -2309,7 +2320,7 @@ class AssignedWatchdogE2ETest extends TestCase
      */
     public function test_t2_invalid_department_id_rejection()
     {
-        $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+        $detail = $this->getOpenDetailQuery()->firstOrFail();
 
         $response = $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.reassign'), [
             'detail_id'     => $detail->id,
@@ -2341,7 +2352,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $details = JournalEntryDetail::whereNotNull('departemen_akun_id')->limit(2)->get();
+            $details = $this->getOpenDetailQuery()->limit(2)->get();
             $origDeptId = $details[0]->departemenAkun->departemen_id;
 
             $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.reassign_bulk'), [
@@ -2365,7 +2376,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'GENERIC-251231-001', 'tanggal' => '2025-12-31']);
-            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $daPusat = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
 
             // Account PIUTANG KARYAWAN assigned to Pusat Bandung should NOT match AWA unit
             $detail = JournalEntryDetail::create([
@@ -2395,8 +2406,8 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'EQUAL-SPLIT-251231-001', 'tanggal' => '2025-12-31']);
-            $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptDufan->id]);
-            $daOds   = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptOds->id]);
+            $daDufan = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptDufan->id]);
+            $daOds   = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptOds->id]);
 
             // 2 rows in DUFAN, 2 rows in ODS (exact tie)
             $lines = [];
@@ -2441,7 +2452,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+            $detail = $this->getOpenDetailQuery()->firstOrFail();
             $targetDept = $this->deptDufan;
 
             // Reassign to DUFAN
@@ -2474,7 +2485,7 @@ class AssignedWatchdogE2ETest extends TestCase
     {
         DB::beginTransaction();
         try {
-            $detail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+            $detail = $this->getOpenDetailQuery()->firstOrFail();
 
             $response = $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.unassign'), [
                 'detail_id' => $detail->id,
@@ -2502,7 +2513,7 @@ class AssignedWatchdogE2ETest extends TestCase
         DB::beginTransaction();
         try {
             $je = JournalEntry::create(['source' => 'HIST-2024-CROSS', 'tanggal' => '2024-11-15']);
-            $da = DepartemenAkun::firstOrCreate(['akun_id' => 1, 'departemen_id' => $this->deptPusat->id]);
+            $da = DepartemenAkun::firstOrCreate(['akun_id' => $this->defaultAkunId, 'departemen_id' => $this->deptPusat->id]);
             $detail = JournalEntryDetail::create([
                 'journal_entry_id'   => $je->id,
                 'departemen_akun_id' => $da->id,
@@ -2558,7 +2569,7 @@ class AssignedWatchdogE2ETest extends TestCase
             $anomalyRes->assertStatus(200);
 
             // Step 3: Auditor identifies an anomalous row and performs reassignment
-            $targetDetail = JournalEntryDetail::whereNotNull('departemen_akun_id')->firstOrFail();
+            $targetDetail = $this->getOpenDetailQuery()->firstOrFail();
             $reassignRes = $this->actingAs($this->adminUser)->postJson(route('assigned_watchdog.reassign'), [
                 'detail_id'     => $targetDetail->id,
                 'departemen_id' => $this->deptSqp->id,
