@@ -1,5 +1,5 @@
 @php
-    $singleId = $selectedDeptId;
+    $singleId = $singleData['targetCol'] ?? (($selectedDeptId === 'konsolidasi') ? 'total' : $selectedDeptId);
 @endphp
 <!DOCTYPE html>
 <html lang="id">
@@ -118,13 +118,6 @@
                     $accountsList = $neraca[$tipe] ?? [];
                 @endphp
 
-                <tr class="{{ $tipeClass }}">
-                    <td colspan="3" style="text-align: left; padding-left: 6px;">{{ $tipeLabels[$tipe] }}</td>
-                    <td class="text-right">
-                        {{ number_format($grandTotals[$tipe][$singleId] ?? 0, 2, ',', '.') }}
-                    </td>
-                </tr>
-
                 @foreach ($accountsList as $item)
                     @php
                         $lvl = $item['level_akun'];
@@ -134,18 +127,25 @@
                     @endphp
 
                     @if ($lvl === 'HEADER')
-                        <tr style="background-color: #f1f5f9; font-weight: bold;">
-                            <td colspan="4" style="padding-left: 8px; color: #334155;">
-                                {{ $item['nama_akun'] }}
+                        @php
+                            $hVal = $vAgg != 0 ? $vAgg : ($grandTotals[$tipe][$singleId] ?? 0);
+                        @endphp
+                        <tr class="{{ $tipeClass }}">
+                            <td colspan="3" style="text-align: left; padding-left: 6px;">
+                                {{ $showAccountNumber ? $item['kode_akun'] . ' - ' . $item['nama_akun'] : $item['nama_akun'] }}
+                            </td>
+                            <td class="text-right">
+                                {{ $hVal < 0 ? '(' . number_format(abs($hVal), 2, ',', '.') . ')' : number_format($hVal, 2, ',', '.') }}
                             </td>
                         </tr>
                     @elseif ($lvl === 'GROUP ACCOUNT')
                         <tr style="background-color: #f8fafc; font-weight: bold;">
-                            <td style="padding-left: 12px; color: #475569;">
-                                {{ $item['nama_akun'] }}
+                            <td colspan="3" style="padding-left: 12px; color: #475569;">
+                                {{ $showAccountNumber ? $item['kode_akun'] . ' - ' . $item['nama_akun'] : $item['nama_akun'] }}
                             </td>
-                            <td></td><td></td>
-                            <td class="text-right" style="color: #94a3b8;">—</td>
+                            <td class="text-right font-bold {{ $vAgg < 0 ? 'num-neg' : '' }}">
+                                {{ $vAgg < 0 ? '(' . number_format(abs($vAgg), 2, ',', '.') . ')' : number_format($vAgg, 2, ',', '.') }}
+                            </td>
                         </tr>
                     @elseif ($lvl === 'ACCOUNT')
                         @if ($isZero) @continue @endif
@@ -208,7 +208,8 @@
 
             <tr class="bg-balance">
                 <td colspan="3" style="padding-left: 6px;">STATUS BALANCE (AKTIVA - PASIVA)</td>
-                <td class="text-right">0,00 (Balanced)</td>
+                @php $diffSingle = ($grandTotals['Aset'][$singleId] ?? 0) - ($grandTotals['Pasiva'][$singleId] ?? 0); @endphp
+                <td class="text-right">{{ abs($diffSingle) < 0.01 ? '0,00 (Balanced)' : number_format($diffSingle, 2, ',', '.') }}</td>
             </tr>
         </tbody>
     </table>

@@ -17,8 +17,10 @@ use App\Http\Controllers\EmployeeOffDayController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\FiscalAccountPersamaanController;
 use App\Http\Controllers\FiscalController;
+use App\Http\Controllers\FiscalSettingController;
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\IncomeStatementController;
+use App\Http\Controllers\LabaRugiDepartemenController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\JabatanController;
 use App\Http\Controllers\JournalEntryController;
@@ -52,6 +54,7 @@ use App\Http\Controllers\SalesOrderController;
 use App\Http\Controllers\SalesOrderDocumentController;
 use App\Http\Controllers\ShiftKaryawanWahanaController;
 use App\Http\Controllers\SlipGajiController;
+use App\Http\Controllers\AssignedWatchdogController;
 use App\Http\Controllers\TargetUnitController;
 use App\Http\Controllers\TargetWahanaController;
 use App\Http\Controllers\UnassignedWatchdogController;
@@ -170,7 +173,9 @@ Route::middleware(['auth'])->group(function () {
 
     Route::delete('journal_entry_truncate', [JournalEntryController::class, 'truncate'])->name('journal_entry.truncate')->middleware('permission:journal_entry.delete');
     Route::delete('journal_entry_delete_range', [JournalEntryController::class, 'deleteByRange'])->name('journal_entry.delete_range')->middleware('permission:journal_entry.delete');
+    Route::delete('journal_entry_bulk_delete', [JournalEntryController::class, 'bulkDestroy'])->name('journal_entry.bulk_delete')->middleware('permission:journal_entry.delete');
 
+    Route::get('journal_entry/{id}/quick-view', [JournalEntryController::class, 'quickView'])->name('journal_entry.quick_view')->middleware('permission:journal_entry.access');
     Route::resource('journal_entry', 'JournalEntryController')->middleware('permission:journal_entry.access');
 
     Route::post('/import/journal_entry', [ImportController::class, 'importjournal_entry'])->name('import.journal_entry');
@@ -192,6 +197,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('fiscal_account_persamaan/{id}', [FiscalAccountPersamaanController::class, 'show'])->name('fiscal_account_persamaan.show');
     Route::get('fiscal', [FiscalController::class, 'fiscal'])->name('fiscal.fiscal_report')->middleware('permission:fiscal.access');
     Route::resource('fiscal_account', 'FiscalAccountController')->middleware('permission:fiscal_account.access');
+    Route::get('fiscal_setting', [FiscalSettingController::class, 'index'])->name('fiscal_setting.index')->middleware('permission:fiscal.access');
+    Route::post('fiscal_setting', [FiscalSettingController::class, 'update'])->name('fiscal_setting.update')->middleware('permission:fiscal.access');
     Route::get('/export/fiscal', [ExportController::class, 'exportfiscal'])->name('export.fiscal');
 
     Route::post('/import/fiscal', [ImportController::class, 'importfiscal'])->name('import.fiscal');
@@ -228,6 +235,10 @@ Route::middleware(['auth'])->group(function () {
     Route::get('filter_buku_besar', [BukuBesarController::class, 'bukuBesarFilter'])->name('buku_besar.filter_buku_besar')->middleware('permission:buku_besar.access');
     Route::get('/laporan/buku-besar', [BukuBesarController::class, 'bukuBesarReport'])->name('buku_besar.buku_besar_report');
     Route::get('/buku_besar/export', [BukuBesarController::class, 'export'])->name('buku_besar.export');
+    Route::patch('/buku_besar/detail/{id}/contra', [BukuBesarController::class, 'updateContra'])->name('buku_besar.update_contra');
+    Route::patch('/buku_besar/detail/{id}/departemen', [BukuBesarController::class, 'updateDepartemen'])->name('buku_besar.update_departemen');
+    Route::patch('/buku_besar/bulk/contra', [BukuBesarController::class, 'bulkUpdateContra'])->name('buku_besar.bulk_update_contra');
+    Route::patch('/buku_besar/bulk/departemen', [BukuBesarController::class, 'bulkUpdateDepartemen'])->name('buku_besar.bulk_update_departemen');
 
 
     // Trial Balance
@@ -240,9 +251,17 @@ Route::middleware(['auth'])->group(function () {
     Route::get('income_statement', [IncomeStatementController::class, 'incomeStatementReport'])->name('income_statement.income_statement_report');
     Route::get('/income_statement/export', [IncomeStatementController::class, 'export'])->name('income_statement.export');
 
-    Route::get('filter_income_statement_departement', [IncomeStatementController::class, 'incomeStatementFilterDepartement'])->name('income_statement.filter_income_statement_departement');
-    Route::get('income_satetement_departement', [IncomeStatementController::class, 'incomeStatementDepartement'])->name('income_statement.income_statement_departement');
-    Route::get('/income_statement_departement/export', [IncomeStatementController::class, 'exportDepartemen'])->name('income_statement_departement.export');
+    // laba rugi departemen (modern PSAK/IFRS multi-step matrix & single report)
+    Route::get('filter_laba_rugi_departemen', [LabaRugiDepartemenController::class, 'filter'])->name('laba_rugi_departemen.filter');
+    Route::get('laba_rugi_departemen_report', [LabaRugiDepartemenController::class, 'report'])->name('laba_rugi_departemen.report');
+    Route::get('laba_rugi_departemen_report_view', [LabaRugiDepartemenController::class, 'report'])->name('laba_rugi_departemen.laba_rugi_departemen_report');
+    Route::get('/laba_rugi_departemen/export', [LabaRugiDepartemenController::class, 'export'])->name('laba_rugi_departemen.export');
+    Route::get('/laba_rugi_departemen/reconcile_audit', [LabaRugiDepartemenController::class, 'reconcileAudit'])->name('laba_rugi_departemen.reconcile_audit');
+
+    // Backward-compatible alias for existing menu items
+    Route::get('filter_income_statement_departement', [LabaRugiDepartemenController::class, 'filter'])->name('income_statement.filter_income_statement_departement');
+    Route::get('income_satetement_departement', [LabaRugiDepartemenController::class, 'report'])->name('income_statement.income_statement_departement');
+    Route::get('/income_statement_departement/export', [LabaRugiDepartemenController::class, 'export'])->name('income_statement_departement.export');
 
 
 
@@ -365,6 +384,9 @@ Route::middleware(['auth'])->group(function () {
     // payment
     Route::resource('payment', 'PaymentController')->middleware('permission:payment_purchase.access');
 
+    // payment expense
+    Route::get('payment_expense/ajax/generate-voucher', 'PaymentExpenseController@ajaxGetVoucherNumber')->name('payment_expense.generate_voucher')->middleware('permission:payment_expense.access');
+    Route::get('payment_expense/{id}/print-voucher', 'PaymentExpenseController@printVoucher')->name('payment_expense.print_voucher')->middleware('permission:payment_expense.access');
     Route::resource('payment_expense', 'PaymentExpenseController')->middleware('permission:payment_expense.access');
     Route::resource('prepayment', 'PrepaymentController')->middleware('permission:prepayment_purchase.access');
 
@@ -477,6 +499,73 @@ Route::middleware(['auth'])->group(function () {
         ->name('unassigned_watchdog.export')
         ->middleware('permission:unassigned_watchdog.access');
 
+    // Assigned Watchdog (Audit & Adjustment Departemen)
+    Route::get('/assigned_watchdog', [AssignedWatchdogController::class, 'index'])
+        ->name('assigned_watchdog.index')
+        ->middleware('permission:assigned_watchdog.access');
+    Route::post('/assigned_watchdog/reassign', [AssignedWatchdogController::class, 'reassign'])
+        ->name('assigned_watchdog.reassign')
+        ->middleware('permission:assigned_watchdog.update');
+    Route::post('/assigned_watchdog/unassign', [AssignedWatchdogController::class, 'unassign'])
+        ->name('assigned_watchdog.unassign')
+        ->middleware('permission:assigned_watchdog.update');
+    Route::post('/assigned_watchdog/reassign_bulk', [AssignedWatchdogController::class, 'reassignBulk'])
+        ->name('assigned_watchdog.reassign_bulk')
+        ->middleware('permission:assigned_watchdog.update');
+    Route::post('/assigned_watchdog/unassign_bulk', [AssignedWatchdogController::class, 'unassignBulk'])
+        ->name('assigned_watchdog.unassign_bulk')
+        ->middleware('permission:assigned_watchdog.update');
+    Route::get('/assigned_watchdog/audit/{id}', [AssignedWatchdogController::class, 'auditHistory'])
+        ->name('assigned_watchdog.audit')
+        ->middleware('permission:assigned_watchdog.access');
+    Route::get('/assigned_watchdog/audit_history/{detailId}', [AssignedWatchdogController::class, 'auditHistory'])
+        ->name('assigned_watchdog.audit_history')
+        ->middleware('permission:assigned_watchdog.access');
+    Route::get('/assigned_watchdog/audit_logs', [AssignedWatchdogController::class, 'auditLogs'])
+        ->name('assigned_watchdog.audit_logs')
+        ->middleware('permission:assigned_watchdog.access');
+    Route::get('/assigned_watchdog/export', [AssignedWatchdogController::class, 'export'])
+        ->name('assigned_watchdog.export')
+        ->middleware('permission:assigned_watchdog.access');
+
+    // Journal Audit & Kamus Indikator (Deteksi Salah Akun & Ambigu)
+    Route::get('/journal-audit', [\App\Http\Controllers\JournalAuditController::class, 'index'])
+        ->name('journal_audit.index')
+        ->middleware('permission:journal_entry.access');
+    Route::get('/journal-audit/export', [\App\Http\Controllers\JournalAuditController::class, 'export'])
+        ->name('journal_audit.export')
+        ->middleware('permission:journal_entry.access');
+    Route::get('/audit-jurnal', [\App\Http\Controllers\JournalAuditController::class, 'index'])
+        ->name('journal_audit.alias_dash')
+        ->middleware('permission:journal_entry.access');
+    Route::get('/audit_jurnal', [\App\Http\Controllers\JournalAuditController::class, 'index'])
+        ->name('journal_audit.alias_underscore')
+        ->middleware('permission:journal_entry.access');
+    Route::post('/journal-audit/scan', [\App\Http\Controllers\JournalAuditController::class, 'scan'])
+        ->name('journal_audit.scan')
+        ->middleware('permission:journal_entry.access');
+    Route::post('/journal-audit/remediate', [\App\Http\Controllers\JournalAuditController::class, 'remediateSingle'])
+        ->name('journal_audit.remediate')
+        ->middleware('permission:journal_entry.access');
+    Route::post('/journal-audit/remediate-bulk', [\App\Http\Controllers\JournalAuditController::class, 'remediateBulk'])
+        ->name('journal_audit.remediate_bulk')
+        ->middleware('permission:journal_entry.access');
+    Route::post('/journal-audit/ignore/{id}', [\App\Http\Controllers\JournalAuditController::class, 'ignoreAnomaly'])
+        ->name('journal_audit.ignore')
+        ->middleware('permission:journal_entry.access');
+    Route::get('/journal-audit/rules', [\App\Http\Controllers\JournalAuditController::class, 'rulesIndex'])
+        ->name('journal_audit.rules')
+        ->middleware('permission:journal_entry.access');
+    Route::post('/journal-audit/rules', [\App\Http\Controllers\JournalAuditController::class, 'storeRule'])
+        ->name('journal_audit.rules.store')
+        ->middleware('permission:journal_entry.access');
+    Route::put('/journal-audit/rules/{id}', [\App\Http\Controllers\JournalAuditController::class, 'updateRule'])
+        ->name('journal_audit.rules.update')
+        ->middleware('permission:journal_entry.access');
+    Route::delete('/journal-audit/rules/{id}', [\App\Http\Controllers\JournalAuditController::class, 'destroyRule'])
+        ->name('journal_audit.rules.destroy')
+        ->middleware('permission:journal_entry.access');
+
 
     // target unit
     Route::resource('target_unit', 'TargetUnitController')->middleware('permission:target_unit.access');
@@ -495,6 +584,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::resource('shift_karyawan', 'ShiftKaryawanWahanaController')->middleware('permission:shift_karyawan.access');
     Route::get('/get-jenis-hari/{unit_kerja_id}', [ShiftKaryawanWahanaController::class, 'getJenisHari']);
+    Route::get('/get-employee-shift-by-unit/{unitId}/{tanggal}', [ShiftKaryawanWahanaController::class, 'getEmployeeShiftByUnit']);
 
     Route::get('/export/ShiftKaryawan', [ExportController::class, 'exportShiftKaryawan'])->name('export.ShiftKaryawan');
     Route::get('/export/ShiftKaryawanTabel', [ExportController::class, 'exportShiftKaryawanTabel'])->name('export.ShiftKaryawanTabel');
@@ -605,8 +695,8 @@ Route::middleware(['auth'])->group(function () {
 
     // Staging Journal Ingestion (Inbox Error)
     Route::get('staging_journal', [\App\Http\Controllers\StagingJournalController::class, 'index'])->name('staging_journal.index');
-    Route::post('staging_journal/{id}/update', [\App\Http\Controllers\StagingJournalController::class, 'update'])->name('staging_journal.update');
     Route::post('staging_journal/reprocess', [\App\Http\Controllers\StagingJournalController::class, 'reprocess'])->name('staging_journal.reprocess');
+    Route::post('staging_journal/{id}/update', [\App\Http\Controllers\StagingJournalController::class, 'update'])->name('staging_journal.update');
 
     // end taxes menu
 });

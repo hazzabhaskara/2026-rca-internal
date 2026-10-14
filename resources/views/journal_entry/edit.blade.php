@@ -9,7 +9,43 @@
                     @csrf
                     @method('PUT')
                     {{-- State filter dari halaman list --}}
-                    <input type="hidden" name="back_url" value="{{ request('back_url', route('journal_entry.index')) }}">
+                    @php
+                        $rawBackUrl = old('back_url', request('back_url'));
+                        if (empty($rawBackUrl) && request()->headers->has('referer')) {
+                            $referer = request()->headers->get('referer');
+                            if (is_string($referer) && !empty($referer) && !\Illuminate\Support\Str::contains($referer, '/edit')) {
+                                $rawBackUrl = $referer;
+                            }
+                        }
+                        if (is_string($rawBackUrl)) {
+                            while (strpos($rawBackUrl, '&amp;') !== false) {
+                                $rawBackUrl = html_entity_decode($rawBackUrl, ENT_QUOTES, 'UTF-8');
+                            }
+                            if (\Illuminate\Support\Str::startsWith($rawBackUrl, '/') && !\Illuminate\Support\Str::startsWith($rawBackUrl, '//') && !\Illuminate\Support\Str::startsWith($rawBackUrl, '/\\')) {
+                                $rawBackUrl = url($rawBackUrl);
+                            }
+                        }
+                        $appUrl = url('/');
+                        $parsedHost = $rawBackUrl && is_string($rawBackUrl) ? parse_url($rawBackUrl, PHP_URL_HOST) : null;
+                        $currentHost = request()->getHost();
+                        $configAppUrl = config('app.url');
+                        $configHost = $configAppUrl ? parse_url($configAppUrl, PHP_URL_HOST) : null;
+                        $isSameHost = $parsedHost && (
+                            strtolower($parsedHost) === strtolower($currentHost) ||
+                            ($configHost && strtolower($parsedHost) === strtolower($configHost))
+                        );
+
+                        $isValidBackUrl = $rawBackUrl && is_string($rawBackUrl) && (
+                            (\Illuminate\Support\Str::startsWith($rawBackUrl, $appUrl) && (
+                                $rawBackUrl === $appUrl ||
+                                \Illuminate\Support\Str::startsWith($rawBackUrl, $appUrl . '/') ||
+                                \Illuminate\Support\Str::startsWith($rawBackUrl, $appUrl . '?')
+                            )) || $isSameHost
+                        );
+                        $safeBackUrl = $isValidBackUrl ? $rawBackUrl : route('journal_entry.index');
+                    @endphp
+                    <input type="hidden" name="back_url" value="{{ $safeBackUrl }}" id="back_url">
+                    <input type="hidden" name="from_new_tab" id="from_new_tab" value="{{ old('from_new_tab', request('from_new_tab', 0)) }}">
 
                     {{-- Error --}}
                     @if ($errors->any())
@@ -46,7 +82,6 @@
                         <table class="min-w-full table-auto border-collapse text-base text-left bg-white">
                             <thead class="bg-gray-100 text-gray-700 font-semibold sticky top-0 z-10">
                                 <tr>
-                                <tr>
                                     <th class="border px-4 py-3 text-center w-[18%]">Accounts</th>
                                     <th class="border px-4 py-3 text-center w-[10%]">Debits</th>
                                     <th class="border px-4 py-3 text-center w-[10%]">Credits</th>
@@ -56,12 +91,12 @@
                                     @endcan
 
                                     @can('fiscal.access')
-                                        <th class="border px-4 py-3 text-center w-[7%]">Fiscorr</th>
-                                        <th class="border px-4 py-3 text-center w-[15%]">Penyesuaian Fiskal</th>
+                                        @if (($fiscalJournalMode ?? 'disabled') === 'enabled')
+                                            <th class="border px-4 py-3 text-center w-[7%]">Fiscorr</th>
+                                            <th class="border px-4 py-3 text-center w-[15%]">Penyesuaian Fiskal</th>
+                                        @endif
                                     @endcan
-                                    <th class="border px-4 py-3 text-center w-[5%]">Aksi</th>
-                                </tr>
-
+                                    <th class="border px-4 py-3 text-center w-[8%]">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody id="item-table-body" class="bg-white">
@@ -78,82 +113,42 @@
 
                                     <tr class="item-row" data-index="{{ $i }}"
                                         data-tipe-akun="{{ $detail->chartOfAccount->tipe_akun ?? '' }}">
-                                        @if ($detail->status == 0)
-                                            <td class="border px-2 py-1">
-                                                @php
-                                                    $selectValue = $detail->departemen_akun_id ? ('d-' . $detail->departemen_akun_id) : ('c-' . ($detail->chartOfAccount->id ?? $detail->kode_akun));
-                                                    $displayText = $detail->kode_akun . ' - ' . ($detail->chartOfAccount->nama_akun ?? '-');
-                                                    if ($detail->departemenAkun && $detail->departemenAkun->departemen) {
-                                                        $displayText .= ' - ' . $detail->departemenAkun->departemen->deskripsi;
-                                                    }
-                                                @endphp
-                                                {{-- Select2 purely for UI display --}}
-                                                <select class="item-select w-full border rounded"
-                                                    data-index="{{ $i }}">
-                                                    <option value="{{ $selectValue }}" selected>{{ $displayText }}</option>
-                                                </select>
+                                        <td class="border px-2 py-1">
+                                            @php
+                                                $selectValue = $detail->departemen_akun_id ? ('d-' . $detail->departemen_akun_id) : ('c-' . ($detail->chartOfAccount->id ?? $detail->kode_akun));
+                                                $displayText = $detail->kode_akun . ' - ' . ($detail->chartOfAccount->nama_akun ?? '-');
+                                                if ($detail->departemenAkun && $detail->departemenAkun->departemen) {
+                                                    $displayText .= ' - ' . $detail->departemenAkun->departemen->deskripsi;
+                                                }
+                                            @endphp
+                                            {{-- Select2 purely for UI display --}}
+                                            <select class="item-select w-full border rounded"
+                                                data-index="{{ $i }}">
+                                                <option value="{{ $selectValue }}" selected>{{ $displayText }}</option>
+                                            </select>
 
-                                                {{-- Hidden inputs for actual server submission --}}
-                                                <input type="hidden" name="items[{{ $i }}][kode_akun]"
-                                                    class="kode-akun" value="{{ $detail->kode_akun }}">
-                                                <input type="hidden" name="items[{{ $i }}][departemen_akun_id]"
-                                                    class="departemen-akun" value="{{ $detail->departemen_akun_id }}">
-                                            </td>
+                                            {{-- Hidden inputs for actual server submission --}}
+                                            <input type="hidden" name="items[{{ $i }}][kode_akun]"
+                                                class="kode-akun" value="{{ $detail->kode_akun }}">
+                                            <input type="hidden" name="items[{{ $i }}][departemen_akun_id]"
+                                                class="departemen-akun" value="{{ $detail->departemen_akun_id }}">
+                                        </td>
 
-                                            <td class="border px-2 py-1">
-                                                <input type="text" name="items[{{ $i }}][debits]"
-                                                    class="money-input debit-input w-full border rounded px-2 py-1 text-right"
-                                                    value="{{ number_format($detail->debits, 2, ',', '.') }}" />
-                                            </td>
-                                            <td class="border px-2 py-1">
-                                                <input type="text" name="items[{{ $i }}][credits]"
-                                                    class="money-input credit-input w-full border rounded px-2 py-1 text-right"
-                                                    value="{{ number_format($detail->credits, 2, ',', '.') }}" />
-                                            </td>
-                                            <td class="border px-2 py-1">
-                                                <input type="text" name="items[{{ $i }}][comment]"
-                                                    class="w-full border rounded px-2 py-1"
-                                                    value="{{ $detail->comment }}" />
-                                            </td>
-                                        @else
-                                            <td class="border px-2 py-1">
-                                                @php
-                                                    $selectValue = $detail->departemen_akun_id ? ('d-' . $detail->departemen_akun_id) : ('c-' . ($detail->chartOfAccount->id ?? $detail->kode_akun));
-                                                    $displayText = $detail->kode_akun . ' - ' . ($detail->chartOfAccount->nama_akun ?? '-');
-                                                    if ($detail->departemenAkun && $detail->departemenAkun->departemen) {
-                                                        $displayText .= ' - ' . $detail->departemenAkun->departemen->deskripsi;
-                                                    }
-                                                @endphp
-                                                {{-- Select2 purely for UI display --}}
-                                                <select class="item-select w-full border rounded" disabled
-                                                    data-index="{{ $i }}">
-                                                    <option value="{{ $selectValue }}" selected>{{ $displayText }}</option>
-                                                </select>
-
-                                                {{-- Hidden inputs for actual server submission --}}
-                                                <input type="hidden" name="items[{{ $i }}][kode_akun]"
-                                                    disabled class="kode-akun" value="{{ $detail->kode_akun }}">
-                                                <input type="hidden" name="items[{{ $i }}][departemen_akun_id]"
-                                                    disabled class="departemen-akun"
-                                                    value="{{ $detail->departemen_akun_id }}">
-                                            </td>
-
-                                            <td class="border px-2 py-1">
-                                                <input type="text" name="items[{{ $i }}][debits]" disabled
-                                                    class="money-input debit-input w-full border rounded px-2 py-1 text-right"
-                                                    value="{{ number_format($detail->debits, 2, ',', '.') }}" />
-                                            </td>
-                                            <td class="border px-2 py-1">
-                                                <input type="text" name="items[{{ $i }}][credits]" disabled
-                                                    class="money-input credit-input w-full border rounded px-2 py-1 text-right"
-                                                    value="{{ number_format($detail->credits, 2, ',', '.') }}" />
-                                            </td>
-                                            <td class="border px-2 py-1">
-                                                <input type="text" name="items[{{ $i }}][comment]" disabled
-                                                    class="w-full border rounded px-2 py-1"
-                                                    value="{{ $detail->comment }}" />
-                                            </td>
-                                        @endif
+                                        <td class="border px-2 py-1">
+                                            <input type="text" name="items[{{ $i }}][debits]"
+                                                class="money-input debit-input w-full border rounded px-2 py-1 text-right"
+                                                value="{{ number_format($detail->debits, 2, ',', '.') }}" />
+                                        </td>
+                                        <td class="border px-2 py-1">
+                                            <input type="text" name="items[{{ $i }}][credits]"
+                                                class="money-input credit-input w-full border rounded px-2 py-1 text-right"
+                                                value="{{ number_format($detail->credits, 2, ',', '.') }}" />
+                                        </td>
+                                        <td class="border px-2 py-1">
+                                            <input type="text" name="items[{{ $i }}][comment]"
+                                                class="w-full border rounded px-2 py-1"
+                                                value="{{ $detail->comment }}" />
+                                        </td>
 
                                         @can('specpose.access')
                                             <td class="border px-2 py-1">
@@ -171,59 +166,55 @@
                                         @endcan
 
                                         @can('fiscal.access')
-                                            <td class="border px-2 py-1 text-center">
-                                                <input type="hidden" name="items[{{ $i }}][pajak]" value="0">
-                                                <input type="checkbox" name="items[{{ $i }}][pajak]" value="1"
-                                                    class="pajak-checkbox"
-                                                    {{ old("items.$i.pajak", $detail->pajak ?? 0) ? 'checked' : '' }}>
-                                            </td>
-                                            <td class="border px-2 py-1 penyesuaian-col text-center">
-                                                @if ($detail->penyesuaian_fiskal || $detail->kode_fiscal)
-                                                    <div class="flex flex-col space-y-1">
-                                                        <select name="items[{{ $i }}][penyesuaian_fiskal]"
-                                                            class="w-full border rounded px-2 py-1">
-                                                            <option value="">-- Pilih --</option>
-                                                            <option value="non_tax"
-                                                                {{ $detail->penyesuaian_fiskal == 'non_tax' ? 'selected' : '' }}>
-                                                                Non Tax Object</option>
-                                                            <option value="pph_final"
-                                                                {{ $detail->penyesuaian_fiskal == 'pph_final' ? 'selected' : '' }}>
-                                                                PPH Final</option>
-                                                            <option value="koreksi_plus"
-                                                                {{ $detail->penyesuaian_fiskal == 'koreksi_plus' ? 'selected' : '' }}>
-                                                                Koreksi Positif</option>
-                                                            <option value="koreksi_minus"
-                                                                {{ $detail->penyesuaian_fiskal == 'koreksi_minus' ? 'selected' : '' }}>
-                                                                Koreksi Negatif</option>
-                                                        </select>
-                                                        <input type="text" name="items[{{ $i }}][kode_fiscal]"
-                                                            value="{{ $detail->kode_fiscal }}" placeholder="Kode Fiscal"
-                                                            class="w-full border rounded px-2 py-1" />
-                                                    </div>
-                                                @else
-                                                    -
-                                                @endif
-                                            </td>
+                                            @if (($fiscalJournalMode ?? 'disabled') === 'enabled')
+                                                <td class="border px-2 py-1 text-center">
+                                                    <input type="hidden" name="items[{{ $i }}][pajak]" value="0">
+                                                    <input type="checkbox" name="items[{{ $i }}][pajak]" value="1"
+                                                        class="pajak-checkbox"
+                                                        {{ old("items.$i.pajak", $detail->pajak ?? 0) ? 'checked' : '' }}>
+                                                </td>
+                                                <td class="border px-2 py-1 penyesuaian-col text-center">
+                                                    @if ($detail->penyesuaian_fiskal || $detail->kode_fiscal)
+                                                        <div class="flex flex-col space-y-1">
+                                                            <select name="items[{{ $i }}][penyesuaian_fiskal]"
+                                                                class="w-full border rounded px-2 py-1">
+                                                                <option value="">-- Pilih --</option>
+                                                                <option value="non_tax"
+                                                                    {{ $detail->penyesuaian_fiskal == 'non_tax' ? 'selected' : '' }}>
+                                                                    Non Tax Object</option>
+                                                                <option value="pph_final"
+                                                                    {{ $detail->penyesuaian_fiskal == 'pph_final' ? 'selected' : '' }}>
+                                                                    PPH Final</option>
+                                                                <option value="koreksi_plus"
+                                                                    {{ $detail->penyesuaian_fiskal == 'koreksi_plus' ? 'selected' : '' }}>
+                                                                    Koreksi Positif</option>
+                                                                <option value="koreksi_minus"
+                                                                    {{ $detail->penyesuaian_fiskal == 'koreksi_minus' ? 'selected' : '' }}>
+                                                                    Koreksi Negatif</option>
+                                                            </select>
+                                                            <input type="text" name="items[{{ $i }}][kode_fiscal]"
+                                                                value="{{ $detail->kode_fiscal }}" placeholder="Kode Fiscal"
+                                                                class="w-full border rounded px-2 py-1" />
+                                                        </div>
+                                                    @else
+                                                        -
+                                                    @endif
+                                                </td>
+                                            @elseif (($fiscalJournalMode ?? 'disabled') === 'hide')
+                                                <input type="hidden" name="items[{{ $i }}][pajak]" value="{{ $detail->pajak ?? 0 }}">
+                                                <input type="hidden" name="items[{{ $i }}][penyesuaian_fiskal]" value="{{ $detail->penyesuaian_fiskal }}">
+                                                <input type="hidden" name="items[{{ $i }}][kode_fiscal]" value="{{ $detail->kode_fiscal }}">
+                                            @endif
                                         @endcan
 
-
-                                        @if ($detail->status == 0)
-                                            <td class="border px-2 py-1 text-center">
-                                                <button type="button"
-                                                    class="add-row px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600">+</button>
-
-                                                <button type="button"
-                                                    class="remove-row px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600">X</button>
-                                            </td>
-                                        @else
-                                            <td class="border px-2 py-1 text-center">
-                                                <button type="button" disabled
-                                                    class="add-row px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600">+</button>
-
-                                                <button type="button" disabled
-                                                    class="remove-row px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600">X</button>
-                                            </td>
-                                        @endif
+                                        <td class="border px-2 py-1 text-center whitespace-nowrap space-x-1">
+                                            <button type="button" title="Tambah Baris"
+                                                class="add-row px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-xs font-bold">+</button>
+                                            <button type="button" title="Auto-Balance (Seimbangkan Baris)"
+                                                class="auto-balance px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs font-bold" data-index="{{ $i }}">⚡</button>
+                                            <button type="button" title="Hapus Baris"
+                                                class="remove-row px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-xs font-bold">X</button>
+                                        </td>
 
                                     </tr>
                                 @endforeach
@@ -232,11 +223,21 @@
                             <tfoot class="bg-gray-100 font-bold text-gray-800">
                                 <tr>
                                     <td class="border px-4 py-2 text-right">TOTAL</td>
-                                    <td class="border px-4 py-2 text-right" id="total-debit">
-                                        {{ number_format($totalDebit, 0, ',', '.') }}
+                                    <td class="border px-4 py-2 text-right font-mono" id="total-debit">
+                                        {{ number_format($totalDebit, 2, ',', '.') }}
                                     </td>
-                                    <td class="border px-4 py-2 text-right" id="total-credit">
-                                        {{ number_format($totalKredit, 0, ',', '.') }}
+                                    <td class="border px-4 py-2 text-right font-mono" id="total-credit">
+                                        {{ number_format($totalKredit, 2, ',', '.') }}
+                                    </td>
+                                    @php
+                                        $footerColspan = 2; // Comment + Aksi
+                                        if (auth()->user()->can('specpose.access')) $footerColspan++;
+                                        if (auth()->user()->can('fiscal.access') && ($fiscalJournalMode ?? 'disabled') === 'enabled') $footerColspan += 2;
+                                    @endphp
+                                    <td colspan="{{ $footerColspan }}" class="border px-4 py-2 text-xs font-normal text-gray-500">
+                                        <div class="flex items-center justify-between">
+                                            <span id="balance-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"></span>
+                                        </div>
                                     </td>
                                 </tr>
                             </tfoot>
@@ -247,17 +248,36 @@
 
 
                     {{-- Actions --}}
-                    <div class="mt-6 flex justify-end gap-4">
-                        <a href="{{ request('back_url', route('journal_entry.index')) }}"
-                            class="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-medium rounded-md">
-                            Cancel
-                        </a>
+                    <div class="mt-6 flex flex-wrap justify-between items-center gap-4">
+                        <div>
+                            @can('journal_entry.delete')
+                                <button type="button" onclick="confirmDeleteCurrentVoucher()"
+                                    class="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-md shadow-sm transition">
+                                    <i class="fas fa-trash-alt mr-2"></i> Hapus Voucher Ini
+                                </button>
+                            @endcan
+                        </div>
 
-                        <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">
-                            Process
-                        </button>
+                        <div class="flex items-center gap-3">
+                            <a href="{{ $safeBackUrl }}" id="btn-cancel" onclick="handleCancel(event)"
+                                class="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-medium rounded-md transition">
+                                Cancel
+                            </a>
+
+                            <button type="submit" class="bg-green-600 text-white px-5 py-2 rounded-md hover:bg-green-700 font-semibold shadow transition">
+                                Process
+                            </button>
+                        </div>
                     </div>
                 </form>
+
+                @can('journal_entry.delete')
+                    <form id="delete-voucher-form" action="{{ route('journal_entry.destroy', $journalEntry->id) }}" method="POST" style="display: none;">
+                        @csrf
+                        @method('DELETE')
+                        <input type="hidden" name="back_url" value="{{ $safeBackUrl }}">
+                    </form>
+                @endcan
             </div>
         </div>
     </div>
@@ -333,6 +353,26 @@
 
             document.getElementById('total-debit').innerText = formatNumber(totalDebit);
             document.getElementById('total-credit').innerText = formatNumber(totalCredit);
+
+            // Real-Time Balance Difference Indicator & Submit Guard
+            const diff = Math.abs(totalDebit - totalCredit);
+            const isBalanced = (diff < 0.01) && (totalDebit > 0 || totalCredit > 0);
+            const badge = $('#balance-badge');
+            const submitBtn = $('#journal-entry-form button[type="submit"]');
+
+            if (badge.length) {
+                if (isBalanced) {
+                    badge.removeClass('bg-red-100 text-red-800 border-red-300')
+                         .addClass('bg-emerald-100 text-emerald-800 border border-emerald-300')
+                         .html('<i class="fas fa-check-circle mr-1 text-emerald-600"></i> Balance (Selisih: Rp 0,00)');
+                    submitBtn.prop('disabled', false).removeClass('opacity-50 cursor-not-allowed');
+                } else {
+                    const diffText = formatNumber(diff);
+                    badge.removeClass('bg-emerald-100 text-emerald-800 border-emerald-300')
+                         .addClass('bg-red-100 text-red-800 border border-red-300')
+                         .html('<i class="fas fa-exclamation-triangle mr-1 text-red-600"></i> Belum Balance (Selisih: Rp ' + diffText + ')');
+                }
+            }
         }
 
         function generateRow(index) {
@@ -344,14 +384,15 @@
                 <input type="hidden" name="items[${index}][departemen_akun_id]" class="departemen-akun">
             </td>
             <td class="border px-2 py-1">
-                <input type="text" name="items[${index}][debits]" class="money-input debit-input w-full border rounded px-2 py-1 text-right" value="0"/>
+                <input type="text" name="items[${index}][debits]" class="money-input debit-input w-full border rounded px-2 py-1 text-right font-mono" value="0,00"/>
             </td>
             <td class="border px-2 py-1">
-                <input type="text" name="items[${index}][credits]" class="money-input credit-input w-full border rounded px-2 py-1 text-right" value="0"/>
+                <input type="text" name="items[${index}][credits]" class="money-input credit-input w-full border rounded px-2 py-1 text-right font-mono" value="0,00"/>
             </td>
             <td class="border px-2 py-1">
                 <input type="text" name="items[${index}][comment]" class="w-full border rounded px-2 py-1"/>
             </td>
+            @can('specpose.access')
             <td class="border px-2 py-1">
                 <select name="items[${index}][project_id]" class="w-full border rounded px-2 py-1">
                     <option value="">-- Pilih Specpose --</option>
@@ -360,14 +401,24 @@
                     @endforeach
                 </select>
             </td>
+            @endcan
+            @can('fiscal.access')
+            @if (($fiscalJournalMode ?? 'disabled') === 'enabled')
             <td class="border px-2 py-1 text-center">
                 <input type="hidden" name="items[${index}][pajak]" value="0">
                 <input type="checkbox" class="pajak-checkbox" name="items[${index}][pajak]" value="1">
             </td>
             <td class="border px-2 py-1 penyesuaian-col text-center">-</td>
-            <td class="border px-2 py-1 text-center">
-                <button type="button" class="add-row px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600">+</button>
-                <button type="button" class="remove-row px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600">X</button>
+            @elseif (($fiscalJournalMode ?? 'disabled') === 'hide')
+            <input type="hidden" name="items[${index}][pajak]" value="0">
+            <input type="hidden" name="items[${index}][penyesuaian_fiskal]" value="">
+            <input type="hidden" name="items[${index}][kode_fiscal]" value="">
+            @endif
+            @endcan
+            <td class="border px-2 py-1 text-center whitespace-nowrap space-x-1">
+                <button type="button" title="Tambah Baris" class="add-row px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-xs font-bold">+</button>
+                <button type="button" title="Auto-Balance (Seimbangkan Baris)" class="auto-balance px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs font-bold" data-index="${index}">⚡</button>
+                <button type="button" title="Hapus Baris" class="remove-row px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-xs font-bold">X</button>
             </td>
         </tr>`;
         }
@@ -486,22 +537,103 @@
             updateTotals();
         });
 
+        // Auto-Balance (Seimbangkan Baris)
+        $(document).on('click', '.auto-balance', function() {
+            const row = $(this).closest('tr');
+            let totalDebit = 0, totalCredit = 0;
+            document.querySelectorAll('.debit-input').forEach(input => totalDebit += parseNumber(input.value));
+            document.querySelectorAll('.credit-input').forEach(input => totalCredit += parseNumber(input.value));
+
+            const curDebit = parseNumber(row.find('.debit-input').val());
+            const curCredit = parseNumber(row.find('.credit-input').val());
+
+            const otherDebit = totalDebit - curDebit;
+            const otherCredit = totalCredit - curCredit;
+
+            if (otherDebit > otherCredit) {
+                row.find('.credit-input').val(formatNumber(otherDebit - otherCredit));
+                row.find('.debit-input').val('0,00');
+            } else if (otherCredit > otherDebit) {
+                row.find('.debit-input').val(formatNumber(otherCredit - otherDebit));
+                row.find('.credit-input').val('0,00');
+            }
+            updateTotals();
+        });
+
+        function confirmDeleteCurrentVoucher() {
+            const voucherSource = @json($journalEntry->source);
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    title: 'Hapus Voucher Ini?',
+                    html: `Apakah Anda yakin ingin menghapus voucher <strong>${voucherSource}</strong>?<br><br><span class="text-xs text-gray-500">Semua baris debit dan kredit pada voucher ini akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.</span>`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#dc2626',
+                    cancelButtonColor: '#6b7280',
+                    confirmButtonText: 'Ya, Hapus Voucher',
+                    cancelButtonText: 'Batal'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        document.getElementById('delete-voucher-form').submit();
+                    }
+                });
+            } else {
+                if (confirm(`Apakah Anda yakin ingin menghapus voucher ${voucherSource} secara permanen? Semua baris debit dan kredit akan dihapus.`)) {
+                    document.getElementById('delete-voucher-form').submit();
+                }
+            }
+        }
+
+        function handleCancel(e) {
+            const cancelBtn = document.getElementById('btn-cancel');
+            const targetUrl = cancelBtn ? cancelBtn.href : '{{ $safeBackUrl }}';
+            if (window.opener && !window.opener.closed) {
+                e.preventDefault();
+                try {
+                    window.close();
+                } catch(err) {}
+                setTimeout(function() {
+                    if (!window.closed) {
+                        window.location.href = targetUrl;
+                    }
+                }, 300);
+            }
+        }
+
         // ✅ Init & event submit aman (urutan paling bawah)
         $(document).ready(function() {
+            // Deteksi jika halaman ini dibuka di tab baru dari tab lain (window.opener)
+            const fromNewTabInput = document.getElementById('from_new_tab');
+            if (fromNewTabInput) {
+                if (window.opener && !window.opener.closed) {
+                    fromNewTabInput.value = '1';
+                }
+            }
+
             $('.item-select').each(function() {
                 attachSelect2($(this));
             });
             updateTotals();
 
-            // ✅ Normalisasi sebelum submit
-            $('#journal-entry-form').on('submit', function() {
-                document.querySelectorAll('.money-input').forEach(input => {
-                    // dari "1.000,50" → "1000.50"
-                    let val = input.value
-                        .replace(/\./g, '') // buang titik ribuan
-                        .replace(',', '.'); // koma → titik desimal
-                    input.value = val; // biarkan string numerik
-                });
+            // ✅ Guard submit & cegah double-click
+            let isSubmitting = false;
+            $('#journal-entry-form').on('submit', function(e) {
+                if (isSubmitting) {
+                    e.preventDefault();
+                    return false;
+                }
+                isSubmitting = true;
+                $(this).find('button[type="submit"]').prop('disabled', true).addClass('opacity-50 cursor-not-allowed');
+
+                // Pastikan nilai back_url tidak mengandung entitas html &amp;
+                const backUrlInput = document.getElementById('back_url');
+                if (backUrlInput && backUrlInput.value) {
+                    let val = backUrlInput.value;
+                    while (val.indexOf('&amp;') !== -1) {
+                        val = val.replace(/&amp;/g, '&');
+                    }
+                    backUrlInput.value = val;
+                }
             });
         });
     </script>

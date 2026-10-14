@@ -129,7 +129,7 @@ class UnitKerjaController extends Controller
         $wahanaList = Wahana::with([
             'wahanaItem' => function ($q) {
                 $q->where('status', 1)
-                    ->orderBy('nama_item')
+                    ->orderBy('id')
                     ->with([
                         'account:id,kode_akun,nama_akun',
                         'departemen:id,deskripsi'

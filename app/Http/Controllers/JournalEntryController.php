@@ -6,11 +6,13 @@ use App\DepartemenAkun;
 use App\JournalEntry;
 use App\JournalEntryDetail;
 use App\Project;
+use App\Setting;
 use App\StartNewYear;
 use App\Services\StartNewYearService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class JournalEntryController extends Controller
 {
@@ -53,7 +55,8 @@ class JournalEntryController extends Controller
         $departemenAkun = DepartemenAkun::all();
         $periodeBuku = StartNewYear::all();
         $project = Project::all();
-        return view('journal_entry.create', compact('departemenAkun', 'periodeBuku', 'project'));
+        $fiscalJournalMode = Setting::get('fiscal_journal_mode', 'disabled');
+        return view('journal_entry.create', compact('departemenAkun', 'periodeBuku', 'project', 'fiscalJournalMode'));
     }
     public function getAutoData(Request $request)
     {
@@ -180,34 +183,12 @@ class JournalEntryController extends Controller
 
     public function store(Request $request)
     {
-        // Fungsi bantu untuk normalisasi angka format Indonesia → float
-        $normalizeNumber = function ($value) {
-            if ($value === null || $value === '') {
-                return null;
-            }
-
-            // Hilangkan karakter selain angka, titik, koma, atau minus
-            $value = preg_replace('/[^\d.,-]/', '', $value);
-
-            // Jika mengandung koma, berarti format Indonesia (1.000,50)
-            if (strpos($value, ',') !== false) {
-                // Hilangkan titik ribuan, ganti koma jadi titik desimal
-                $value = str_replace('.', '', $value);
-                $value = str_replace(',', '.', $value);
-            }
-            // Jika tidak ada koma → berarti sudah format internasional (1000.50)
-            // → biarkan titik tetap ada sebagai desimal
-
-            return (float) $value;
-        };
-
-
         // Bersihkan dan filter input
         $cleanedItems = collect($request->items)
             ->filter(fn($item) => !empty($item['kode_akun']))
-            ->map(function ($item) use ($normalizeNumber) {
-                $item['debits']  = $normalizeNumber($item['debits'] ?? null);
-                $item['credits'] = $normalizeNumber($item['credits'] ?? null);
+            ->map(function ($item) {
+                $item['debits']  = $this->normalizeNumber($item['debits'] ?? null);
+                $item['credits'] = $this->normalizeNumber($item['credits'] ?? null);
                 return $item;
             })
             ->values()
@@ -282,7 +263,13 @@ class JournalEntryController extends Controller
                 'comment' => $request->comment,
             ]);
 
+            $fiscalJournalMode = Setting::get('fiscal_journal_mode', 'disabled');
+
             foreach ($cleanedItems as $item) {
+                $pajak = ($fiscalJournalMode === 'disabled') ? 0 : ($item['pajak'] ?? 0);
+                $penyesuaianFiskal = ($fiscalJournalMode === 'disabled') ? null : ($item['penyesuaian_fiskal'] ?? null);
+                $kodeFiscal = ($fiscalJournalMode === 'disabled') ? null : ($item['kode_fiscal'] ?? null);
+
                 $entry->details()->create([
                     'kode_akun'          => $item['kode_akun'],
                     'departemen_akun_id' => $item['departemen_akun_id'] ?? null,
@@ -290,9 +277,9 @@ class JournalEntryController extends Controller
                     'credits'            => $item['credits'] ?? 0,
                     'comment'            => $item['comment'] ?? null,
                     'project_id'         => $item['project_id'] ?? null,
-                    'pajak'              => $item['pajak'] ?? 0,
-                    'penyesuaian_fiskal' => $item['penyesuaian_fiskal'] ?? null,
-                    'kode_fiscal'        => $item['kode_fiscal'] ?? null,
+                    'pajak'              => $pajak,
+                    'penyesuaian_fiskal' => $penyesuaianFiskal,
+                    'kode_fiscal'        => $kodeFiscal,
                 ]);
             }
 
@@ -321,14 +308,78 @@ class JournalEntryController extends Controller
         return view('journal_entry.show', compact('journal'));
     }
 
+    public function quickView($id)
+    {
+        $journal = JournalEntry::with([
+            'details.chartOfAccount',
+            'details.departemenAkun.departemen'
+        ])->findOrFail($id);
+
+        $editUrl = route('journal_entry.edit', $journal->id);
+        $backUrl = request('back_url');
+        if (empty($backUrl) && request()->headers->has('referer')) {
+            $referer = request()->headers->get('referer');
+            if (is_string($referer) && !empty($referer) && !Str::contains($referer, '/edit')) {
+                $backUrl = $referer;
+            }
+        }
+        if (!empty($backUrl)) {
+            while (is_string($backUrl) && strpos($backUrl, '&amp;') !== false) {
+                $backUrl = html_entity_decode($backUrl, ENT_QUOTES, 'UTF-8');
+            }
+            $editUrl .= '?back_url=' . urlencode($backUrl);
+        }
+
+        return response()->json([
+            'id' => $journal->id,
+            'source' => $journal->source,
+            'tanggal' => $journal->tanggal ? \Carbon\Carbon::parse($journal->tanggal)->format('d-m-Y') : '-',
+            'raw_tanggal' => $journal->tanggal,
+            'comment' => $journal->comment ?? '-',
+            'edit_url' => $editUrl,
+            'show_url' => route('journal_entry.show', $journal->id),
+            'details' => $journal->details->map(function ($d) {
+                $dept = $d->departemenAkun ? $d->departemenAkun->departemen : null;
+                return [
+                    'id' => $d->id,
+                    'kode_akun' => $d->kode_akun,
+                    'nama_akun' => $d->chartOfAccount ? $d->chartOfAccount->nama_akun : '-',
+                    'departemen' => $dept ? ($dept->kode . ' - ' . $dept->deskripsi) : 'Non-Departemen / Unassigned',
+                    'departemen_kode' => $dept ? $dept->kode : 'Non-Dept',
+                    'comment' => $d->comment ?? '-',
+                    'debits' => (float) $d->debits,
+                    'credits' => (float) $d->credits,
+                    'debits_formatted' => number_format((float) $d->debits, 2, ',', '.'),
+                    'credits_formatted' => number_format((float) $d->credits, 2, ',', '.'),
+                ];
+            }),
+            'total_debits' => (float) $journal->details->sum('debits'),
+            'total_credits' => (float) $journal->details->sum('credits'),
+            'total_debits_formatted' => number_format((float) $journal->details->sum('debits'), 2, ',', '.'),
+            'total_credits_formatted' => number_format((float) $journal->details->sum('credits'), 2, ',', '.'),
+            'is_balanced' => abs($journal->details->sum('debits') - $journal->details->sum('credits')) < 0.01,
+        ]);
+    }
+
     public function destroy($id)
     {
+        if (auth()->check() && !auth()->user()->can('journal_entry.delete')) {
+            if (request()->ajax() || request()->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki hak akses untuk menghapus voucher ini.'
+                ], 403);
+            }
+            abort(403, 'Anda tidak memiliki hak akses untuk menghapus voucher ini.');
+        }
+
         DB::beginTransaction();
 
         try {
             // Temukan journal entry
             $entry = JournalEntry::findOrFail($id);
             $tanggal = $entry->tanggal; // Simpan tanggal sebelum dihapus
+            $source = $entry->source;
 
             // Hapus detail terlebih dahulu
             JournalEntryDetail::where('journal_entry_id', $entry->id)->delete();
@@ -341,11 +392,18 @@ class JournalEntryController extends Controller
             // Auto-recalculate jurnal penutup jika backyear
             $this->recalculateClosingIfBackyear($tanggal);
 
+            if (request()->ajax() || request()->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => "Voucher {$source} berhasil dihapus."
+                ]);
+            }
+
             // --- Kembalikan ke state list sebelumnya ---
             $backUrl = request('back_url');
 
             // Validasi: hanya boleh redirect ke domain aplikasi sendiri (cegah open redirect)
-            if ($backUrl && str_starts_with($backUrl, url('/'))) {
+            if ($this->isValidInternalUrl($backUrl)) {
                 // Parse query string dari back_url untuk cek page
                 $parsed   = parse_url($backUrl);
                 $queryStr = $parsed['query'] ?? '';
@@ -403,13 +461,100 @@ class JournalEntryController extends Controller
 
             Log::error('Gagal menghapus journal entry: ' . $e->getMessage());
 
+            if (request()->ajax() || request()->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal menghapus journal entry: ' . $e->getMessage()
+                ], 500);
+            }
+
             $backUrl = request('back_url');
-            $redirectTarget = ($backUrl && str_starts_with($backUrl, url('/')))
+            $redirectTarget = $this->isValidInternalUrl($backUrl)
                 ? redirect($backUrl)
                 : redirect()->route('journal_entry.index');
 
             return $redirectTarget
                 ->with('error', 'Gagal menghapus journal entry: ' . $e->getMessage());
+        }
+    }
+
+    public function bulkDestroy(Request $request)
+    {
+        if (auth()->check() && !auth()->user()->can('journal_entry.delete')) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki hak akses untuk menghapus voucher ini.'
+                ], 403);
+            }
+            abort(403, 'Anda tidak memiliki hak akses untuk menghapus voucher ini.');
+        }
+
+        $entryIds = $request->input('ids');
+        if (is_string($entryIds)) {
+            $entryIds = explode(',', $entryIds);
+        }
+        $entryIds = array_filter(array_unique(array_map('intval', (array) $entryIds)));
+
+        if (empty($entryIds)) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => 'Tidak ada voucher yang dipilih.'], 422);
+            }
+            return redirect()->back()->with('error', 'Tidak ada voucher yang dipilih.');
+        }
+
+        DB::beginTransaction();
+        try {
+            $entries = JournalEntry::whereIn('id', $entryIds)->get();
+            $count = $entries->count();
+
+            if ($count === 0) {
+                DB::rollBack();
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json(['success' => false, 'message' => 'Voucher yang dipilih tidak ditemukan.'], 404);
+                }
+                return redirect()->back()->with('error', 'Voucher yang dipilih tidak ditemukan.');
+            }
+
+            $tanggals = $entries->pluck('tanggal')->unique();
+
+            JournalEntryDetail::whereIn('journal_entry_id', $entryIds)->delete();
+            JournalEntry::whereIn('id', $entryIds)->delete();
+
+            DB::commit();
+
+            foreach ($tanggals as $tgl) {
+                $this->recalculateClosingIfBackyear($tgl);
+            }
+
+            $msg = "{$count} voucher berhasil dihapus.";
+
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $msg,
+                    'deleted_count' => $count
+                ]);
+            }
+
+            $backUrl = $request->input('back_url');
+            if ($this->isValidInternalUrl($backUrl)) {
+                return redirect($backUrl)->with('success', $msg);
+            }
+
+            return redirect()->back()->with('success', $msg);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Gagal menghapus bulk journal entry: ' . $e->getMessage());
+
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal menghapus voucher: ' . $e->getMessage()
+                ], 500);
+            }
+
+            return redirect()->back()->with('error', 'Gagal menghapus voucher: ' . $e->getMessage());
         }
     }
 
@@ -539,40 +684,19 @@ class JournalEntryController extends Controller
         $journalEntry = JournalEntry::with(['details.chartOfAccount', 'details.departemenAkun.departemen', 'details.project'])->findOrFail($id);
 
         $projects = Project::all();
-        return view('journal_entry.edit', compact('journalEntry', 'projects'));
+        $fiscalJournalMode = Setting::get('fiscal_journal_mode', 'disabled');
+        return view('journal_entry.edit', compact('journalEntry', 'projects', 'fiscalJournalMode'));
     }
     public function update(Request $request, $id)
     {
 
         // dd($request->all());
-        // Fungsi bantu untuk normalisasi angka format Indonesia → float (contoh: "1.234,56" → 1234.56)
-        $normalizeNumber = function ($value) {
-            if ($value === null || $value === '') {
-                return null;
-            }
-
-            // Hilangkan karakter selain angka, titik, koma, atau minus
-            $value = preg_replace('/[^\d.,-]/', '', $value);
-
-            // Jika mengandung koma, berarti format Indonesia (1.000,50)
-            if (strpos($value, ',') !== false) {
-                // Hilangkan titik ribuan, ganti koma jadi titik desimal
-                $value = str_replace('.', '', $value);
-                $value = str_replace(',', '.', $value);
-            }
-            // Jika tidak ada koma → berarti sudah format internasional (1000.50)
-            // → biarkan titik tetap ada sebagai desimal
-
-            return (float) $value;
-        };
-
-
         // Bersihkan dan filter input
         $cleanedItems = collect($request->items)
             ->filter(fn($item) => !empty($item['kode_akun']))
-            ->map(function ($item) use ($normalizeNumber) {
-                $item['debits']  = $normalizeNumber($item['debits'] ?? null);
-                $item['credits'] = $normalizeNumber($item['credits'] ?? null);
+            ->map(function ($item) {
+                $item['debits']  = $this->normalizeNumber($item['debits'] ?? null);
+                $item['credits'] = $this->normalizeNumber($item['credits'] ?? null);
                 $item['departemen_akun_id'] = !empty($item['departemen_akun_id']) ? (int) $item['departemen_akun_id'] : null;
                 return $item;
             })
@@ -650,8 +774,14 @@ class JournalEntryController extends Controller
             // Hapus detail lama
             $entry->details()->delete();
 
+            $fiscalJournalMode = Setting::get('fiscal_journal_mode', 'disabled');
+
             // Simpan detail baru
             foreach ($cleanedItems as $item) {
+                $pajak = ($fiscalJournalMode === 'disabled') ? 0 : ($item['pajak'] ?? 0);
+                $penyesuaianFiskal = ($fiscalJournalMode === 'disabled') ? null : ($item['penyesuaian_fiskal'] ?? null);
+                $kodeFiscal = ($fiscalJournalMode === 'disabled') ? null : ($item['kode_fiscal'] ?? null);
+
                 $entry->details()->create([
                     'departemen_akun_id' => $item['departemen_akun_id'] ?? null,
                     'kode_akun'          => $item['kode_akun'],
@@ -659,9 +789,9 @@ class JournalEntryController extends Controller
                     'credits'            => $item['credits'] ?? 0,
                     'comment'            => $item['comment'] ?? null,
                     'project_id'         => $item['project_id'] ?? null,
-                    'pajak'              => $item['pajak'] ?? 0,
-                    'penyesuaian_fiskal' => $item['penyesuaian_fiskal'] ?? null,
-                    'kode_fiscal'        => $item['kode_fiscal'] ?? null,
+                    'pajak'              => $pajak,
+                    'penyesuaian_fiskal' => $penyesuaianFiskal,
+                    'kode_fiscal'        => $kodeFiscal,
                 ]);
             }
 
@@ -672,15 +802,30 @@ class JournalEntryController extends Controller
 
             // --- Kembalikan ke state list sebelumnya ---
             $backUrl = $request->input('back_url');
-
-            // Validasi: hanya boleh redirect ke domain aplikasi sendiri (cegah open redirect)
-            if ($backUrl && str_starts_with($backUrl, url('/'))) {
-                return redirect($backUrl)
-                    ->with('success', 'Journal entry berhasil diperbarui.');
+            if (empty($backUrl) && $request->headers->has('referer')) {
+                $referer = $request->headers->get('referer');
+                if (is_string($referer) && !empty($referer) && !Str::contains($referer, '/edit')) {
+                    $backUrl = $referer;
+                }
+            }
+            if ($backUrl) {
+                while (is_string($backUrl) && strpos($backUrl, '&amp;') !== false) {
+                    $backUrl = html_entity_decode($backUrl, ENT_QUOTES, 'UTF-8');
+                }
             }
 
-            return redirect()
-                ->route('journal_entry.index')
+            // Validasi: hanya boleh redirect ke domain aplikasi sendiri (cegah open redirect)
+            $isInternal = $this->isValidInternalUrl($backUrl);
+            $targetUrl = $isInternal ? $backUrl : route('journal_entry.index');
+
+            if ($request->input('from_new_tab') == '1') {
+                return view('journal_entry.tab_close_redirect', [
+                    'backUrl' => $targetUrl,
+                    'message' => 'Journal entry berhasil diperbarui.',
+                ]);
+            }
+
+            return redirect($targetUrl)
                 ->with('success', 'Journal entry berhasil diperbarui.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -715,5 +860,81 @@ class JournalEntryController extends Controller
                 Log::warning('Gagal recalculate closing entries: ' . $e->getMessage());
             }
         }
+    }
+
+    /**
+     * Validasi URL: hanya boleh redirect ke domain internal aplikasi sendiri (cegah open redirect).
+     * Mendukung URL internal absolut maupun path relatif yang aman.
+     */
+    private function isValidInternalUrl(&$url)
+    {
+        if (empty($url) || !is_string($url)) {
+            return false;
+        }
+
+        // Decode HTML entities (misal &amp; -> &)
+        while (is_string($url) && strpos($url, '&amp;') !== false) {
+            $url = html_entity_decode($url, ENT_QUOTES, 'UTF-8');
+        }
+
+        // Normalisasi path relatif aman (contoh: /laporan/buku-besar?start_date=...)
+        // Tolak protocol-relative '//' dan backslash-prefixed '/\'
+        if (Str::startsWith($url, '/') && !Str::startsWith($url, '//') && !Str::startsWith($url, '/\\')) {
+            $url = url($url);
+        }
+
+        $appUrl = url('/');
+        if (Str::startsWith($url, $appUrl) && (
+            $url === $appUrl ||
+            Str::startsWith($url, $appUrl . '/') ||
+            Str::startsWith($url, $appUrl . '?')
+        )) {
+            return true;
+        }
+
+        // Toleransi domain/host: jika host URL sama dengan host request saat ini atau config app.url
+        $parsedUrl = parse_url($url);
+        $currentHost = request()->getHost();
+        $configAppUrl = config('app.url');
+        $configHost = $configAppUrl ? parse_url($configAppUrl, PHP_URL_HOST) : null;
+        if (!empty($parsedUrl['host'])) {
+            $targetHost = strtolower($parsedUrl['host']);
+            if ($targetHost === strtolower($currentHost) || ($configHost && $targetHost === strtolower($configHost))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Normalisasi nilai input angka (format Indonesia atau internasional) menjadi float.
+     */
+    private function normalizeNumber($value)
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (is_int($value) || is_float($value)) {
+            return (float) $value;
+        }
+
+        $value = preg_replace('/[^\d.,-]/', '', (string) $value);
+
+        // Format Indonesia: mengandung koma (misal 1.000,50 atau 1000,50 atau 0,00)
+        if (strpos($value, ',') !== false) {
+            $value = str_replace('.', '', $value);
+            $value = str_replace(',', '.', $value);
+            return (float) $value;
+        }
+
+        // Jika tidak ada koma, tapi ada titik ribuan (misal 39.500.000 atau 39.500)
+        if (substr_count($value, '.') > 1 || preg_match('/\.\d{3}$/', $value)) {
+            $value = str_replace('.', '', $value);
+            return (float) $value;
+        }
+
+        // Format internasional desimal (misal 1000.50)
+        return (float) $value;
     }
 }

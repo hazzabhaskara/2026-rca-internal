@@ -403,4 +403,25 @@ class ShiftKaryawanWahanaController extends Controller
 
         return $pdf->download('shift_karyawan_tabel.pdf');
     }
+
+    public function getEmployeeShiftByUnit($unitId, $tanggal)
+    {
+        $shifts = ShiftKaryawanWahana::with(['karyawan.levelKaryawan', 'wahana'])
+            ->where('unit_kerja_id', $unitId)
+            ->whereDate('tanggal', $tanggal)
+            ->get();
+
+        $result = [];
+        foreach ($shifts as $s) {
+            $result[] = [
+                'employee_id' => $s->employee_id,
+                'nama_karyawan' => $s->karyawan->nama_karyawan ?? '-',
+                'level_karyawan_id' => $s->karyawan->level_kepegawaian_id ?? null,
+                'nama_level' => $s->karyawan->levelKaryawan->nama_level ?? '-',
+                'wahana_id' => $s->wahana_id,
+                'nama_wahana' => $s->wahana->nama_wahana ?? '-',
+            ];
+        }
+        return response()->json($result);
+    }
 }

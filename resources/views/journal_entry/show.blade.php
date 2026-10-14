@@ -95,13 +95,26 @@
 
         <!-- Tombol Kembali -->
         <div class="mt-8 flex flex-col sm:flex-row justify-between items-center gap-3">
-            <a href="{{ route('journal_entry.index') }}"
+            @php
+                $rawBackUrl = request('back_url');
+                if (is_string($rawBackUrl) && str_starts_with($rawBackUrl, '/') && !str_starts_with($rawBackUrl, '//') && !str_starts_with($rawBackUrl, '/\\')) {
+                    $rawBackUrl = url($rawBackUrl);
+                }
+                $appUrl = url('/');
+                $isValidBackUrl = $rawBackUrl && is_string($rawBackUrl) && str_starts_with($rawBackUrl, $appUrl) && (
+                    $rawBackUrl === $appUrl ||
+                    str_starts_with($rawBackUrl, $appUrl . '/') ||
+                    str_starts_with($rawBackUrl, $appUrl . '?')
+                );
+                $safeBackUrl = $isValidBackUrl ? $rawBackUrl : route('journal_entry.index');
+            @endphp
+            <a href="{{ $safeBackUrl }}"
                 class="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-200 transition">
                 <i class="fas fa-arrow-left mr-2"></i> Kembali
             </a>
 
             <div class="flex gap-3">
-                <a href="{{ route('journal_entry.edit', $journal->id) }}"
+                <a href="{{ route('journal_entry.edit', $journal->id) . ($isValidBackUrl ? '?back_url=' . urlencode($safeBackUrl) : '') }}"
                     class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition">
                     <i class="fas fa-edit mr-2"></i> Edit
                 </a>

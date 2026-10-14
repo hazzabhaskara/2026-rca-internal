@@ -8,6 +8,7 @@
                 <ul class="flex border-b mb-4 space-x-4 text-sm font-medium text-gray-600" role="tablist">
                     <li><a href="#select_item" class="tab-link active">Proces Closing Harian</a></li>
                     <li><a href="#journal_report" class="tab-link">Journal report</a></li>
+                    <li><a href="#reject" class="tab-link">Reject</a></li>
                 </ul>
             </div>
             @php
@@ -48,7 +49,7 @@
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                                 <label for="tanggal" class="block text-sm font-medium text-gray-700 mb-1">Tanggal</label>
-                                <input type="date" name="tanggal" class="w-full px-4 py-2 border">
+                                <input type="date" name="tanggal" id="tanggal_closing" class="w-full px-4 py-2 border">
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Unit Kerja</label>
@@ -107,6 +108,29 @@
                             </tfoot>
                         </table>
                     </div>
+
+                    <div id="reject" class="tab-content hidden">
+                        <h2 class="text-lg font-semibold mb-4">Reject</h2>
+                        <table class="w-full border border-gray-300 text-sm">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th class="border px-2 py-1">Employee</th>
+                                    <th class="border px-2 py-1">Level</th>
+                                    <th class="border px-2 py-1">Wahana</th>
+                                    <th class="border px-2 py-1">4R</th>
+                                    <th class="border px-2 py-1">6R</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rejectBody">
+                                <tr>
+                                    <td colspan="5" class="border p-2 text-center text-gray-500">
+                                        Pilih Unit Kerja dan Tanggal untuk memuat data reject
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
                     <!-- Buttons -->
                     <div class="mt-6 justify-end  flex space-x-4">
                         <a href="{{ route('closing_harian.index') }}"
@@ -154,6 +178,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             let unitName = '';
             const unitSelect = document.getElementById('unit_kerja_id');
+            const tanggalInput = document.getElementById('tanggal_closing') || document.querySelector('input[name="tanggal"]');
             const komponenContainer = document.getElementById('komponenContainer');
             const komponenTable = document.getElementById('komponenTable');
 
@@ -165,31 +190,27 @@
                 komponenContainer.classList.add('hidden');
 
                 if (!unitId) return;
+                const tanggal = tanggalInput ? tanggalInput.value : '';
 
                 fetch(`/get-linked-account-by-unit/${unitId}`)
                     .then(res => res.json())
                     .then(data => {
-                        // console.log('🔍 Data linked accounts dari server:',
-                        //     data); // <– tampilkan seluruh hasil JSON
-
                         linkedAccountsMap = {};
-                        data.linkedAccounts.forEach(acc => {
-                            linkedAccountsMap[acc.kode] = {
-                                id: acc.id,
-                                kode: acc.akun.split(' - ')[0] || '-',
-                                name: acc.akun.split(' - ')[1] || '-',
-                                departemen: acc.departemen
-                            };
+                        if (data && data.linkedAccounts) {
+                            data.linkedAccounts.forEach(acc => {
+                                linkedAccountsMap[acc.kode] = {
+                                    id: acc.id,
+                                    kode: (acc.akun ? acc.akun.split(' - ')[0] : '-') || '-',
+                                    name: (acc.akun ? acc.akun.split(' - ')[1] : '-') || '-',
+                                    departemen: acc.departemen
+                                };
+                            });
                             generateJournalPreviewFormat2();
-                        });
-
-                        // console.log('🧭 Hasil mapping ke linkedAccountsMap:',
-                        //     linkedAccountsMap); // <– tampilkan hasil akhir mapping
+                        }
                     })
                     .catch(error => {
-                        // console.error('❌ Error saat fetch linked account:', error);
+                        console.error('Error fetch linked account:', error);
                     });
-
 
                 fetch(`/get-wahana-by-unit/${unitId}`)
                     .then(response => response.json())
@@ -204,20 +225,70 @@
                         } else if (format === 2 || format === 4) {
                             html = generateFormat2(data.wahana, unitName);
                         } else {
-                            html =
-                                `<p class="text-red-600 font-semibold mt-2">Format closing tidak di ada.</p>`;
+                            html = `<p class="text-red-600 font-semibold mt-2">Format closing tidak ada.</p>`;
                         }
 
                         komponenTable.innerHTML = html;
                         komponenContainer.classList.remove('hidden');
 
-                        // ⬇️ Tambahan baru — pasang listener setelah tabel dirender
                         if (format === 1 || format === 3) {
                             attachListeners(data.wahana);
-                        } else if (format === 2 || format === 4)
+                        } else if (format === 2 || format === 4) {
                             attachListeners2(data.wahana);
+                        }
                     });
+
+                if (tanggal) {
+                    loadRejectEmployees(unitId, tanggal);
+                }
             });
+
+            if (tanggalInput) {
+                tanggalInput.addEventListener('change', function() {
+                    const unitId = unitSelect.value;
+                    if (!unitId) return;
+                    loadRejectEmployees(unitId, this.value);
+                });
+            }
+
+            function loadRejectEmployees(unitId, tanggal) {
+                if (!unitId || !tanggal) return;
+                fetch(`/get-employee-shift-by-unit/${unitId}/${tanggal}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        let html = '';
+                        if (Array.isArray(data) && data.length > 0) {
+                            data.forEach((item, index) => {
+                                html += `
+                                <tr>
+                                    <td class="border p-1">
+                                        ${item.nama_karyawan}
+                                        <input type="hidden" name="reject[${index}][employee_id]" value="${item.employee_id}">
+                                    </td>
+                                    <td class="border p-1">
+                                        ${item.nama_level}
+                                        <input type="hidden" name="reject[${index}][level_karyawan_id]" value="${item.level_karyawan_id}">
+                                    </td>
+                                    <td class="border p-1">
+                                        ${item.nama_wahana}
+                                        <input type="hidden" name="reject[${index}][wahana_id]" value="${item.wahana_id}">
+                                    </td>
+                                    <td class="border p-1">
+                                        <input type="number" min="0" value="0" name="reject[${index}][r4]" class="w-full border px-2 py-1 text-center">
+                                    </td>
+                                    <td class="border p-1">
+                                        <input type="number" min="0" value="0" name="reject[${index}][r6]" class="w-full border px-2 py-1 text-center">
+                                    </td>
+                                </tr>`;
+                            });
+                        } else {
+                            html = `<tr><td colspan="5" class="border p-2 text-center text-gray-500">Tidak ada jadwal shift karyawan pada tanggal ini</td></tr>`;
+                        }
+                        const rBody = document.getElementById('rejectBody');
+                        if (rBody) rBody.innerHTML = html;
+                    })
+                    .catch(err => console.error('Error loadRejectEmployees:', err));
+            }
 
             // ============================================================
             // FORMAT 1: Sederhana (dibersihkan, tanpa event listener)
@@ -284,7 +355,7 @@
                 wahanaList.forEach((wahana, idx) => {
                     const items = getItems(wahana);
                     html +=
-                        `<tr><td class=" font-semibold bg-blue-50">${wahana.nama_wahana || '-'}</td>`;
+                        `<tr><td class=" font-semibold bg-blue-50"><input type="hidden" name="details[${idx}][wahana_id]" value="${wahana.id}">${wahana.nama_wahana || '-'}</td>`;
 
                     allItemNames.forEach((itemName, iidx) => {
                         const item = items.find(i => i.nama_item === itemName);
@@ -537,7 +608,7 @@
                 wahanaList.forEach((wahana, idx) => {
                     const items = getItems(wahana);
                     html +=
-                        `<tr><td class=" font-semibold text-left bg-blue-50">${wahana.nama_wahana || '-'}</td>`;
+                        `<tr><td class=" font-semibold text-left bg-blue-50"><input type="hidden" name="details[${idx}][wahana_id]" value="${wahana.id}">${wahana.nama_wahana || '-'}</td>`;
 
                     allItemNames.forEach((itemName, iidx) => {
                         const item = items.find(i => i.nama_item === itemName);

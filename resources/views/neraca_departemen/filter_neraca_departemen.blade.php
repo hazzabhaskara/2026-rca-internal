@@ -101,11 +101,19 @@
                         </label>
                         <select id="departemen_id" name="departemen_id"
                             class="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 bg-white">
+                            <option value="konsolidasi" {{ request('departemen_id') === 'konsolidasi' ? 'selected' : '' }}>
+                                [KONSOLIDASI] Total Konsolidasi Perusahaan
+                            </option>
+                            <option disabled>────────── Cabang Operasional ──────────</option>
                             @foreach ($departments as $dept)
                                 <option value="{{ $dept->id }}" {{ request('departemen_id') == $dept->id ? 'selected' : '' }}>
                                     [{{ $dept->kode }}] {{ $dept->deskripsi }}
                                 </option>
                             @endforeach
+                            <option disabled>────────── Transaksi Khusus ──────────</option>
+                            <option value="unassigned" {{ request('departemen_id') === 'unassigned' ? 'selected' : '' }}>
+                                [NON-DEPT] Non-Departemen / Unassigned
+                            </option>
                         </select>
                     </div>
 

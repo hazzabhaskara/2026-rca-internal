@@ -97,41 +97,18 @@
                             <thead class="bg-gray-50 sticky top-0 z-10">
                                 <tr>
                                     <th
-                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        #</th>
-                                    <th
-                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Invoice Order</th>
-                                    <th
-                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Invoice Number</th>
-                                    <th
-                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Shipping Date</th>
-                                    <th
-                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Vendor</th>
-                                    <th
-                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Location</th>
-                                    <th
-                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Payment Method</th>
-                                    <th
-                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Shipping Address</th>
-                                    <th
-                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Early Payment Terms</th>
-                                    <th
-                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Status</th>
-                                    <th
-                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Messages</th>
-                                    <th
-                                        class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Aksi</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">#</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Tgl Invoice</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">No. Invoice & Pajak</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Gudang</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Tgl Kirim</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Vendor</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Metode Bayar</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Alamat Kirim</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Syarat Bayar</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Catatan</th>
+                                    <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
@@ -139,7 +116,25 @@
                                     <tr class="hover:bg-gray-50 transition-colors duration-150">
                                         <td class="px-6 py-4 text-sm text-gray-500">{{ $loop->iteration }}</td>
                                         <td class="px-6 py-4">{{ $item->date_invoice }}</td>
-                                        <td class="px-6 py-4">{{ $item->invoice_number }}</td>
+                                        <td class="px-6 py-4">
+                                            <div class="font-medium text-gray-900">{{ $item->invoice_number }}</div>
+                                            <div class="flex items-center space-x-1 mt-1">
+                                                @if($item->is_non_faktur_pajak)
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800" title="Bon Manual - Wajib minta Faktur Pajak Resmi">
+                                                        ⚠️ Non-Faktur (Bon)
+                                                    </span>
+                                                @elseif($item->nomor_faktur_pajak)
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800" title="Faktur Pajak Coretax">
+                                                        <i class="fas fa-check-circle mr-1 text-emerald-600"></i>{{ \Illuminate\Support\Str::limit($item->nomor_faktur_pajak, 18) }}
+                                                    </span>
+                                                @endif
+                                                @if($item->documents && $item->documents->count() > 0)
+                                                    <a href="{{ route('purchase_invoice.show', $item->id) }}" class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100" title="{{ $item->documents->count() }} Dokumen Lampiran Fisik">
+                                                        <i class="fas fa-paperclip mr-1"></i>{{ $item->documents->count() }}
+                                                    </a>
+                                                @endif
+                                            </div>
+                                        </td>
                                         <td class="px-6 py-4">{{ $item->locationInventories->kode_lokasi }}</td>
                                         <td class="px-6 py-4">{{ $item->shipping_date }}</td>
                                         <td class="px-6 py-4">{{ $item->vendor->nama_vendors ?? '-' }}</td>

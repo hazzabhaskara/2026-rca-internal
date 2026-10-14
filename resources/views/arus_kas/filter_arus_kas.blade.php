@@ -143,7 +143,7 @@
                             <i class="fas fa-filter mr-2"></i> Ok
                         </button>
 
-                        <a href=""
+                        <a href="{{ route('arus_kas.filter_arus_kas') }}"
                             class="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-800 font-medium text-sm rounded-md hover:bg-gray-200">
                             <i class="fas fa-undo mr-2"></i> Reset
                         </a>

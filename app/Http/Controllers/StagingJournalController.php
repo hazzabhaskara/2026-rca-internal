@@ -5,36 +5,74 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\StagingJournalEntry;
 use App\ChartOfAccount;
+use App\Departement;
 use App\Services\JournalIngestionService;
 
 class StagingJournalController extends Controller
 {
     public function index(Request $request)
     {
-        $status = $request->get('status', 'failed');
-        $entries = StagingJournalEntry::where('status', $status)->orderBy('created_at', 'desc')->paginate(50);
-        $coas = ChartOfAccount::select('kode_akun', 'nama_akun')->get();
+        $status  = $request->get('status', 'failed');
+        $entries = StagingJournalEntry::where('status', $status)
+            ->orderBy('created_at', 'desc')
+            ->paginate(50);
 
-        return view('staging_journal.index', compact('entries', 'status', 'coas'));
+        $coas        = ChartOfAccount::select('kode_akun', 'nama_akun')->orderBy('kode_akun')->get();
+        $departements = Departement::select('id', 'kode', 'deskripsi')->orderBy('kode')->get();
+
+        return view('staging_journal.index', compact('entries', 'status', 'coas', 'departements'));
     }
 
+    /**
+     * Update kode_akun dan/atau departemen pada baris staging, kembalikan ke 'pending'.
+     */
     public function update(Request $request, $id)
     {
         $entry = StagingJournalEntry::findOrFail($id);
-        
-        $entry->update([
-            'kode_akun' => $request->kode_akun,
-            'status' => 'pending' // Set to pending to be reprocessed
-        ]);
 
-        return response()->json(['success' => true, 'message' => 'Akun berhasil diupdate, status kembali ke pending.']);
+        $updateData = ['status' => 'pending', 'error_message' => null];
+
+        if ($request->filled('kode_akun')) {
+            $updateData['kode_akun'] = $request->kode_akun;
+        }
+        if ($request->has('departemen')) {
+            $updateData['departemen'] = $request->departemen ?: null;
+        }
+
+        $entry->update($updateData);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Data berhasil diupdate, status kembali ke pending untuk diproses ulang.',
+        ]);
     }
 
+    /**
+     * Proses ulang semua data pending (All-or-Nothing).
+     */
     public function reprocess(JournalIngestionService $service)
     {
-        // Re-process all pending entries
         $result = $service->processPendingEntries();
-        
-        return redirect()->back()->with('success', $result['message'] . ' Berhasil: ' . $result['processed_rows'] . ' Baris, Gagal: ' . $result['failed_rows'] . ' Baris.');
+
+        if ($result['status'] === 'empty') {
+            return redirect()->back()->with('info', $result['message']);
+        }
+
+        if ($result['status'] === 'validation_error') {
+            return redirect()
+                ->to(route('staging_journal.index', ['status' => 'failed']))
+                ->with('validation_errors', $result['errors'])
+                ->with('error_summary', $result['summary'])
+                ->with('error_message_text', $result['message']);
+        }
+
+        if ($result['status'] === 'success') {
+            return redirect()
+                ->to(route('staging_journal.index', ['status' => 'success']))
+                ->with('success', $result['message'] . ' Berhasil: ' . $result['processed_rows'] . ' baris.');
+        }
+
+        // internal error
+        return redirect()->back()->with('danger', $result['message']);
     }
 }

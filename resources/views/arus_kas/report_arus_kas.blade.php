@@ -49,6 +49,13 @@
                                     <select name="periode_buku" id="periode"
                                         class="w-full border border-gray-300 rounded-lg px-4 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
                                         <option value="">---Pilih---</option>
+                                        @if(isset($tahun_buku))
+                                            @foreach ($tahun_buku as $item)
+                                                <option value="{{ $item->id }}" data-tahun="{{ trim($item->tahun) }}">
+                                                    {{ $item->tahun }}
+                                                </option>
+                                            @endforeach
+                                        @endif
                                     </select>
                                 </div>
 
@@ -96,23 +103,49 @@
                 </div>
                 
                 <h3 class="text-lg font-bold mb-2">LAPORAN CASH FLOW</h3>
-                <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <p class="text-[10px]">
+                <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+                    <p class="text-xs text-gray-600">
                         <span class="font-semibold">Periode:</span>
                         {{ \Carbon\Carbon::parse($tanggalAwal)->format('d M Y') }} -
                         {{ \Carbon\Carbon::parse($tanggalAkhir)->format('d M Y') }}
                     </p>
-                    <div class="text-[10px]">
+                    <div class="text-xs">
                         <span class="font-semibold">Mode:</span>
                         @if($displayMode == 'source')
-                            <span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-[10px]">Detail per Source</span>
+                            <span class="bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded text-xs font-semibold">Detail per Source</span>
                         @elseif($displayMode == 'account')
-                            <span class="bg-green-100 text-green-800 px-2 py-0.5 rounded text-[10px]">Per Account Kas/Bank</span>
+                            <span class="bg-green-100 text-green-800 px-2.5 py-0.5 rounded text-xs font-semibold">Per Account Kas/Bank</span>
                         @elseif($displayMode == 'direct')
-                            <span class="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px]">Metode Langsung</span>
+                            <span class="bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded text-xs font-semibold">Metode Langsung</span>
                         @else
-                            <span class="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-[10px]">Universal</span>
+                            <span class="bg-purple-100 text-purple-800 px-2.5 py-0.5 rounded text-xs font-semibold">Universal</span>
                         @endif
+                    </div>
+                </div>
+
+                {{-- TOP KPI SUMMARY CARDS --}}
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-sm">
+                        <div class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">1. Saldo Awal Kas & Bank</div>
+                        <div class="text-base font-bold text-slate-900 mt-1">Rp {{ number_format($saldoAwal ?? 0, 2, ',', '.') }}</div>
+                        <div class="text-[10px] text-slate-400 mt-0.5">Per {{ \Carbon\Carbon::parse($tanggalAwal)->format('d M Y') }}</div>
+                    </div>
+                    <div class="bg-emerald-50/50 border border-emerald-200 rounded-xl p-4 shadow-sm">
+                        <div class="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">2. Total Kas Masuk (In)</div>
+                        <div class="text-base font-bold text-emerald-700 mt-1">+Rp {{ number_format($grandCashIn ?? 0, 2, ',', '.') }}</div>
+                        <div class="text-[10px] text-emerald-600/70 mt-0.5">Semua penerimaan kas & bank</div>
+                    </div>
+                    <div class="bg-rose-50/50 border border-rose-200 rounded-xl p-4 shadow-sm">
+                        <div class="text-[11px] font-semibold text-rose-700 uppercase tracking-wider">3. Total Kas Keluar (Out)</div>
+                        <div class="text-base font-bold text-rose-700 mt-1">-Rp {{ number_format($grandCashOut ?? 0, 2, ',', '.') }}</div>
+                        <div class="text-[10px] text-rose-600/70 mt-0.5">Beban, operasional, payroll, AP</div>
+                    </div>
+                    <div class="bg-blue-50/60 border-2 border-blue-400 rounded-xl p-4 shadow-sm">
+                        <div class="text-[11px] font-semibold text-blue-800 uppercase tracking-wider">4. Saldo Akhir Kas & Bank</div>
+                        <div class="text-base font-extrabold text-blue-900 mt-1">Rp {{ number_format($saldoAkhir ?? 0, 2, ',', '.') }}</div>
+                        <div class="text-[10px] text-blue-700 font-medium mt-0.5 flex items-center gap-1">
+                            <i class="fas fa-check-circle text-blue-600"></i> Sesuai Neraca & Buku Besar
+                        </div>
                     </div>
                 </div>
 
@@ -511,11 +544,11 @@
                     {{-- Summary Box --}}
                     <div class="mt-6 p-4 bg-gray-50 rounded-lg border">
                         <h4 class="font-semibold text-gray-700 mb-3">Ringkasan Arus Kas</h4>
-                        <div class="grid grid-cols-3 gap-4 text-sm">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
                             @foreach ($aktivitasData as $aktKey => $akt)
                                 @php $aktNetFlow = $akt['cash_in'] - $akt['cash_out']; @endphp
                                 <div class="p-3 rounded {{ $aktNetFlow >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200' }} border">
-                                    <div class="text-xs text-gray-600">{{ $aktKey }}</div>
+                                    <div class="text-xs text-gray-600 font-medium">{{ $aktKey }}</div>
                                     <div class="font-bold {{ $aktNetFlow >= 0 ? 'text-green-700' : 'text-red-700' }}">
                                         Rp {{ number_format($aktNetFlow, 0, ',', '.') }}
                                     </div>
@@ -523,9 +556,50 @@
                             @endforeach
                         </div>
                     </div>
+
+                    {{-- Rekonsiliasi Kas Standar PSAK 2 --}}
+                    <div class="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl shadow-xs">
+                        <div class="max-w-md ml-auto text-xs space-y-1.5">
+                            <div class="font-bold text-slate-800 border-b pb-1">REKONSILIASI SALDO KAS & BANK</div>
+                            <div class="flex justify-between items-center text-slate-700">
+                                <span>Saldo Kas & Bank pada Awal Periode:</span>
+                                <span class="font-semibold text-slate-900">Rp {{ number_format($saldoAwal ?? 0, 2, ',', '.') }}</span>
+                            </div>
+                            <div class="flex justify-between items-center text-slate-700">
+                                <span>Kenaikan / (Penurunan) Bersih Kas & Bank:</span>
+                                <span class="font-bold {{ ($netCashFlow ?? 0) >= 0 ? 'text-green-700' : 'text-red-700' }}">
+                                    Rp {{ number_format($netCashFlow ?? 0, 2, ',', '.') }}
+                                </span>
+                            </div>
+                            <div class="flex justify-between items-center bg-blue-50/80 p-2 rounded-lg border border-blue-200 text-blue-900 font-bold">
+                                <span>Saldo Kas & Bank pada Akhir Periode:</span>
+                                <span>Rp {{ number_format($saldoAkhir ?? 0, 2, ',', '.') }}</span>
+                            </div>
+                        </div>
+                    </div>
                 @endif
 
             </div>
         </div>
     </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const periodeSelect = document.getElementById('periode');
+            const tanggalInput = document.getElementById('start_date');
+            const tanggalAkhir = document.getElementById('end_date');
+
+            if (periodeSelect && tanggalInput && tanggalAkhir) {
+                periodeSelect.addEventListener('change', function() {
+                    const selectedOption = this.options[this.selectedIndex];
+                    const tahun = selectedOption.getAttribute('data-tahun')?.trim();
+
+                    if (/^\d{4}$/.test(tahun)) {
+                        tanggalInput.value = `${tahun}-01-01`;
+                        tanggalAkhir.value = `${tahun}-12-31`;
+                    }
+                });
+            }
+        });
+    </script>
 @endsection

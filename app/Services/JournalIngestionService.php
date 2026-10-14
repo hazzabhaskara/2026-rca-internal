@@ -5,208 +5,300 @@ namespace App\Services;
 use App\StagingJournalEntry;
 use App\ChartOfAccount;
 use App\DepartemenAkun;
+use App\Departement;
 use App\JournalEntry;
 use App\JournalEntryDetail;
-use App\Project;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class JournalIngestionService
 {
     /**
-     * Memproses semua data staging dengan status 'pending'.
+     * All-or-Nothing: Validasi SEMUA baris pending terlebih dahulu.
+     * Jika ada 1 error di mana saja → SEMUA baris ditolak, tidak ada yang masuk ke journal_entries.
+     * Jika semua valid → insert dalam satu transaksi besar.
      *
-     * @param string|null $batchId Opsional, memproses batch tertentu saja.
-     * @return array Hasil ringkasan proses
+     * @param  string|null $batchId  Filter batch tertentu (opsional)
+     * @return array
      */
-    public function processPendingEntries($batchId = null)
+    public function processPendingEntries($batchId = null): array
     {
         $query = StagingJournalEntry::where('status', 'pending');
         if ($batchId) {
             $query->where('batch_id', $batchId);
         }
-
         $pendingEntries = $query->get();
 
         if ($pendingEntries->isEmpty()) {
-            return ['status' => 'success', 'message' => 'Tidak ada data pending untuk diproses.', 'processed' => 0];
+            return [
+                'status'         => 'empty',
+                'message'        => 'Tidak ada data pending untuk diproses.',
+                'processed_rows' => 0,
+                'failed_rows'    => 0,
+                'errors'         => [],
+                'summary'        => null,
+            ];
         }
 
-        // 1) Kelompokkan berdasarkan Jurnal (source + tanggal)
-        $grouped = $pendingEntries->groupBy(function ($item) {
-            return ($item->source ?? '') . '|' . ($item->tanggal ?? '');
-        });
+        // ─── Preload Master Data (hindari N+1 query) ───────────────────────────
+        $coaByCode = ChartOfAccount::get(['id', 'kode_akun', 'nama_akun'])
+            ->keyBy('kode_akun');
 
-        $processedCount = 0;
-        $failedCount    = 0;
-
-        // 2) Preload Master Data untuk performa (hindari N+1 query)
-        $allCoa    = ChartOfAccount::get(['kode_akun', 'nama_akun', 'id']);
-        $coaByCode = $allCoa->keyBy('kode_akun');
-
-        // Preload Departement — lookup by kode ATAU deskripsi (case-insensitive)
-        $allDepartemen         = \App\Departement::all(['id', 'kode', 'deskripsi']);
+        $allDepartemen         = Departement::all(['id', 'kode', 'deskripsi']);
         $departemenByKode      = $allDepartemen->keyBy(fn($d) => strtoupper(trim($d->kode ?? '')));
         $departemenByDeskripsi = $allDepartemen->keyBy(fn($d) => strtoupper(trim($d->deskripsi ?? '')));
 
-        // Preload DepartemenAkun — index: "departemen_id:akun_id" → record
-        $allDeptAkun   = DepartemenAkun::all(['id', 'departemen_id', 'akun_id']);
-        $deptAkunIndex = $allDeptAkun->keyBy(fn($da) => $da->departemen_id . ':' . $da->akun_id);
+        $deptAkunIndex = DepartemenAkun::all(['id', 'departemen_id', 'akun_id'])
+            ->keyBy(fn($da) => $da->departemen_id . ':' . $da->akun_id);
+
+        $kamusRules = \App\KamusIndikatorAkun::active()->get();
+
+        // ─── Kelompokkan per Voucher (source + tanggal) ────────────────────────
+        $grouped = $pendingEntries->groupBy(
+            fn($item) => ($item->source ?? '') . '|' . ($item->tanggal ?? '')
+        );
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // FASE 1 — VALIDASI TOTAL (kumpulkan SEMUA error, jangan insert dulu)
+        // ═══════════════════════════════════════════════════════════════════════
+        $allErrors   = [];   // [ ['source'=>.., 'tanggal'=>.., 'message'=>..], ... ]
+        $rowErrorMap = [];   // row->id => string error_message
 
         foreach ($grouped as $key => $groupRows) {
-            DB::beginTransaction();
-            try {
-                $totalDebit    = 0;
-                $totalKredit   = 0;
-                $hasError      = false;
-                $errorMessages = [];
+            [$source, $tanggal] = array_pad(explode('|', $key, 2), 2, '');
 
-                // 3) Validasi Per Baris
-                foreach ($groupRows as $row) {
-                    $debitVal  = $this->parseAmount($row->debit);
-                    $kreditVal = $this->parseAmount($row->kredit);
-                    $totalDebit  += $debitVal;
-                    $totalKredit += $kreditVal;
+            $voucherErrors = [];
+            $totalDebit    = 0.0;
+            $totalKredit   = 0.0;
 
-                    // Cek ketersediaan akun di COA
-                    $akun = $coaByCode->get($row->kode_akun);
-                    if (!$akun) {
-                        $hasError        = true;
-                        $errorMessages[] = "Kode akun '{$row->kode_akun}' tidak ditemukan di Chart of Accounts.";
+            foreach ($groupRows as $row) {
+                $debitVal  = $this->parseAmount($row->debit);
+                $kreditVal = $this->parseAmount($row->kredit);
+                $totalDebit  += $debitVal;
+                $totalKredit += $kreditVal;
+
+                $rowErrors = [];
+
+                // ── Validasi kode_akun ────────────────────────────────────────
+                if (empty(trim($row->kode_akun ?? ''))) {
+                    $rowErrors[] = "Kode akun kosong.";
+                } elseif (!$coaByCode->has($row->kode_akun)) {
+                    $rowErrors[] = "Kode akun '{$row->kode_akun}' tidak ditemukan di Chart of Accounts.";
+                }
+
+                // ── Validasi departemen (OPSIONAL) ────────────────────────────
+                $deptValue = trim($row->departemen ?? '');
+                if (!empty($deptValue)) {
+                    $deptKey = strtoupper($deptValue);
+                    $dept    = $departemenByKode->get($deptKey)
+                            ?? $departemenByDeskripsi->get($deptKey);
+
+                    if (!$dept) {
+                        $rowErrors[] = "Departemen '{$deptValue}' tidak ditemukan di master data.";
+                    } elseif ($coaByCode->has($row->kode_akun)) {
+                        $akun     = $coaByCode->get($row->kode_akun);
+                        $indexKey = $dept->id . ':' . $akun->id;
+                        if (!$deptAkunIndex->has($indexKey)) {
+                            $rowErrors[] = "Kombinasi departemen '{$deptValue}' + akun '{$row->kode_akun}' belum terdaftar di Assign Account (departemen_akuns).";
+                        }
                     }
+                }
 
-                    // Validasi departemen — hanya jika kolom departemen DIISI di Excel
-                    if (!empty(trim($row->departemen ?? ''))) {
-                        $deptKey = strtoupper(trim($row->departemen));
-
-                        // Cari by kode dulu, jika tidak ada coba by deskripsi
-                        $dept = $departemenByKode->get($deptKey)
-                             ?? $departemenByDeskripsi->get($deptKey);
-
-                        if (!$dept) {
-                            $hasError        = true;
-                            $errorMessages[] = "Departemen '{$row->departemen}' tidak ditemukan di master data.";
-                        } elseif ($akun) {
-                            // Cek apakah pasangan departemen + akun terdaftar di departemen_akuns
-                            $indexKey = $dept->id . ':' . $akun->id;
-                            $deptAkun = $deptAkunIndex->get($indexKey);
-
-                            if (!$deptAkun) {
-                                $hasError        = true;
-                                $errorMessages[] = "Kombinasi departemen '{$row->departemen}' dan akun '{$row->kode_akun}' belum terdaftar di Assign Account (departemen_akuns).";
+                // ── Validasi Kamus Indikator (Cek Salah Akun) ─────────────────
+                if (!empty($row->comment_line) && $kamusRules->isNotEmpty()) {
+                    foreach ($kamusRules as $rule) {
+                        if ($rule->tingkat_kepastian === 'PASTI' && $rule->matchesText($row->comment_line)) {
+                            $isTarget = ($row->kode_akun === $rule->target_kode_akun);
+                            $isAlt    = is_array($rule->alternate_kode_akuns) && in_array($row->kode_akun, $rule->alternate_kode_akuns);
+                            if (!$isTarget && !$isAlt) {
+                                $rowErrors[] = "[Peringatan Kamus COA] Narasi '{$row->comment_line}' terindikasi ke akun {$rule->target_kode_akun} ({$rule->target_nama_akun}), bukan '{$row->kode_akun}'.";
+                                break;
                             }
                         }
                     }
                 }
 
-                // 4) Validasi Total Balance
-                if (round($totalDebit, 2) !== round($totalKredit, 2)) {
-                    $hasError        = true;
-                    $errorMessages[] = "Total debit ($totalDebit) dan kredit ($totalKredit) tidak balance.";
+                if (!empty($rowErrors)) {
+                    $rowErrorMap[$row->id] = implode('; ', $rowErrors);
                 }
+            }
 
-                if ($hasError) {
-                    // Tandai SELURUH BATCH jurnal ini sebagai failed — tidak ada baris yang lolos
-                    $this->markAsFailed($groupRows, implode('; ', array_unique($errorMessages)));
-                    $failedCount += $groupRows->count();
-                    DB::rollBack();
-                    continue;
-                }
-
-                // 5) Insert ke Tabel Utama (journal_entries & journal_entry_details)
-                $firstRow     = $groupRows->first();
-                $journalEntry = JournalEntry::create([
-                    'source'  => $firstRow->source,
-                    'tanggal' => $this->transformDate($firstRow->tanggal),
-                    'comment' => $firstRow->comment_line ?? '',
-                ]);
+            // ── Validasi Balance per Voucher ──────────────────────────────────
+            if (round($totalDebit, 2) !== round($totalKredit, 2)) {
+                $balanceMsg = sprintf(
+                    "Balance tidak seimbang: Total Debit=%s ≠ Total Kredit=%s.",
+                    number_format($totalDebit, 2, '.', ','),
+                    number_format($totalKredit, 2, '.', ',')
+                );
+                $voucherErrors[] = $balanceMsg;
 
                 foreach ($groupRows as $row) {
-                    $akun = $coaByCode->get($row->kode_akun);
-
-                    // Resolve departemen_akun_id dari string departemen
-                    $departemenAkunId = null;
-                    if (!empty(trim($row->departemen ?? '')) && $akun) {
-                        $deptKey = strtoupper(trim($row->departemen));
-                        $dept    = $departemenByKode->get($deptKey)
-                                ?? $departemenByDeskripsi->get($deptKey);
-                        if ($dept) {
-                            $indexKey        = $dept->id . ':' . $akun->id;
-                            $deptAkunRecord  = $deptAkunIndex->get($indexKey);
-                            $departemenAkunId = $deptAkunRecord ? $deptAkunRecord->id : null;
-                        }
-                    }
-
-                    JournalEntryDetail::create([
-                        'journal_entry_id'   => $journalEntry->id,
-                        'kode_akun'          => $row->kode_akun,
-                        'departemen_akun_id' => $departemenAkunId,
-                        'debits'             => $this->parseAmount($row->debit),
-                        'credits'            => $this->parseAmount($row->kredit),
-                        'comment'            => $row->comment_line ?? '',
-                    ]);
+                    $rowErrorMap[$row->id] = isset($rowErrorMap[$row->id])
+                        ? $rowErrorMap[$row->id] . '; ' . $balanceMsg
+                        : $balanceMsg;
                 }
+            }
 
-                // 6) Tandai sukses di staging
-                $this->markAsSuccess($groupRows);
-                $processedCount += $groupRows->count();
+            // ── Tambahkan error baris ke voucherErrors ────────────────────────
+            foreach ($groupRows as $row) {
+                if (isset($rowErrorMap[$row->id])) {
+                    $voucherErrors[] = "Baris [{$row->kode_akun}]: " . $rowErrorMap[$row->id];
+                }
+            }
 
-                DB::commit();
-            } catch (\Exception $e) {
-                DB::rollBack();
-                Log::error('Gagal proses Ingestion: ' . $e->getMessage());
-                $this->markAsFailed($groupRows, 'Internal Error: ' . $e->getMessage());
-                $failedCount += $groupRows->count();
+            if (!empty($voucherErrors)) {
+                $allErrors[] = [
+                    'source'  => $source,
+                    'tanggal' => $tanggal,
+                    'rows'    => $groupRows->count(),
+                    'message' => implode(' | ', array_unique($voucherErrors)),
+                ];
             }
         }
 
-        return [
-            'status'         => 'success',
-            'message'        => "Proses Ingestion Selesai.",
-            'processed_rows' => $processedCount,
-            'failed_rows'    => $failedCount
-        ];
+        // ═══════════════════════════════════════════════════════════════════════
+        // FASE 1 RESULT — Ada Error → Tolak Semua (All-or-Nothing)
+        // ═══════════════════════════════════════════════════════════════════════
+        if (!empty($allErrors)) {
+            $totalRows     = $pendingEntries->count();
+            $totalVouchers = $grouped->count();
+            $errorVouchers = count($allErrors);
+
+            // ⚠️ PENTING: Update status TANPA DB::transaction()
+            //    Agar tidak di-rollback secara tidak sengaja
+            $defaultMsg = "Ditolak: batch ini ditolak karena voucher lain mengandung error (All-or-Nothing).";
+            foreach ($pendingEntries as $row) {
+                StagingJournalEntry::where('id', $row->id)->update([
+                    'status'        => 'failed',
+                    'error_message' => $rowErrorMap[$row->id] ?? $defaultMsg,
+                    'updated_at'    => now(),
+                ]);
+            }
+
+            return [
+                'status'         => 'validation_error',
+                'message'        => "Proses ditolak (All-or-Nothing): {$errorVouchers} dari {$totalVouchers} voucher bermasalah. Semua {$totalRows} baris ditandai failed.",
+                'processed_rows' => 0,
+                'failed_rows'    => $totalRows,
+                'errors'         => $allErrors,
+                'summary'        => [
+                    'total_rows'     => $totalRows,
+                    'total_vouchers' => $totalVouchers,
+                    'error_vouchers' => $errorVouchers,
+                    'ok_vouchers'    => $totalVouchers - $errorVouchers,
+                ],
+            ];
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // FASE 2 — SEMUA VALID → Insert dalam satu transaksi besar
+        // ═══════════════════════════════════════════════════════════════════════
+        try {
+            DB::transaction(function () use (
+                $grouped, $coaByCode,
+                $departemenByKode, $departemenByDeskripsi, $deptAkunIndex
+            ) {
+                foreach ($grouped as $groupRows) {
+                    $firstRow = $groupRows->first();
+
+                    $journalEntry = JournalEntry::create([
+                        'source'  => $firstRow->source,
+                        'tanggal' => $this->transformDate($firstRow->tanggal),
+                        'comment' => $firstRow->comment_line ?? '',
+                    ]);
+
+                    foreach ($groupRows as $row) {
+                        $akun             = $coaByCode->get($row->kode_akun);
+                        $departemenAkunId = null;
+
+                        $deptValue = trim($row->departemen ?? '');
+                        if (!empty($deptValue) && $akun) {
+                            $deptKey = strtoupper($deptValue);
+                            $dept    = $departemenByKode->get($deptKey)
+                                    ?? $departemenByDeskripsi->get($deptKey);
+                            if ($dept) {
+                                $indexKey        = $dept->id . ':' . $akun->id;
+                                $deptAkunRecord  = $deptAkunIndex->get($indexKey);
+                                $departemenAkunId = $deptAkunRecord ? $deptAkunRecord->id : null;
+                            }
+                        }
+
+                        JournalEntryDetail::create([
+                            'journal_entry_id'   => $journalEntry->id,
+                            'kode_akun'          => $row->kode_akun,
+                            'departemen_akun_id' => $departemenAkunId,
+                            'debits'             => $this->parseAmount($row->debit),
+                            'credits'            => $this->parseAmount($row->kredit),
+                            'comment'            => $row->comment_line ?? '',
+                        ]);
+                    }
+
+                    // Tandai semua baris voucher ini sebagai success
+                    StagingJournalEntry::whereIn('id', $groupRows->pluck('id')->toArray())
+                        ->update([
+                            'status'        => 'success',
+                            'error_message' => null,
+                            'updated_at'    => now(),
+                        ]);
+                }
+            });
+
+            $totalRows = $pendingEntries->count();
+            return [
+                'status'         => 'success',
+                'message'        => "Proses Ingestion Selesai. Semua data berhasil dimasukkan.",
+                'processed_rows' => $totalRows,
+                'failed_rows'    => 0,
+                'errors'         => [],
+                'summary'        => null,
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('[JournalIngestionService] Fatal error: ' . $e->getMessage());
+
+            // Semua baris ditandai failed — DILUAR transaction yang sudah rollback
+            StagingJournalEntry::whereIn('id', $pendingEntries->pluck('id')->toArray())
+                ->update([
+                    'status'        => 'failed',
+                    'error_message' => 'Internal Error: ' . $e->getMessage(),
+                    'updated_at'    => now(),
+                ]);
+
+            return [
+                'status'         => 'error',
+                'message'        => 'Terjadi error internal: ' . $e->getMessage(),
+                'processed_rows' => 0,
+                'failed_rows'    => $pendingEntries->count(),
+                'errors'         => [],
+                'summary'        => null,
+            ];
+        }
     }
 
-    protected function parseAmount($value)
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    protected function parseAmount($value): float
     {
-        if (empty($value)) return 0;
+        if (empty($value)) return 0.0;
         return (float) str_replace([',', ' ', '-'], '', $value);
     }
 
-    protected function transformDate($dateString)
+    protected function transformDate($dateString): ?string
     {
         if (empty($dateString)) return null;
 
-        // Tangani konversi date berupa angka serial dari excel
         if (is_numeric($dateString)) {
             try {
-                return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($dateString)->format('Y-m-d');
+                return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float)$dateString)
+                    ->format('Y-m-d');
             } catch (\Exception $e) {
-                // Fallback jika gagal
+                // fallthrough
             }
         }
 
-        return date('Y-m-d', strtotime($dateString));
-    }
-
-    protected function markAsFailed($groupRows, $message)
-    {
-        $ids = $groupRows->pluck('id');
-        StagingJournalEntry::whereIn('id', $ids)->update([
-            'status'        => 'failed',
-            'error_message' => $message,
-            'updated_at'    => now()
-        ]);
-    }
-
-    protected function markAsSuccess($groupRows)
-    {
-        $ids = $groupRows->pluck('id');
-        StagingJournalEntry::whereIn('id', $ids)->update([
-            'status'        => 'success',
-            'error_message' => null,
-            'updated_at'    => now()
-        ]);
+        $parsed = strtotime($dateString);
+        return $parsed ? date('Y-m-d', $parsed) : null;
     }
 }

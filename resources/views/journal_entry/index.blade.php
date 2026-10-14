@@ -174,8 +174,12 @@
 
                                     <td class="px-2 py-1 text-center whitespace-nowrap text-right text-sm font-medium">
                                         <div class="flex justify-end space-x-3">
+                                            @php
+                                                $currentBackUrl = route('journal_entry.index') . (request()->getQueryString() ? '?' . request()->getQueryString() : '');
+                                            @endphp
+
                                             @can('journal_entry.update')
-                                                <a href="{{ route('journal_entry.show', $item->id) }}"
+                                                <a href="{{ route('journal_entry.show', $item->id) . '?back_url=' . urlencode($currentBackUrl) }}"
                                                     class="text-blue-500 hover:text-blue-700 p-2 rounded-full hover:bg-blue-50 transition-colors"
                                                     title="View">
                                                     <i class="fas fa-eye"></i>
@@ -183,10 +187,7 @@
                                             @endcan
 
                                             @can('journal_entry.update')
-                                                @php
-                                                    $backUrl = route('journal_entry.index') . (request()->getQueryString() ? '?' . request()->getQueryString() : '');
-                                                @endphp
-                                                <a href="{{ route('journal_entry.edit', $item->id) . '?back_url=' . urlencode($backUrl) }}"
+                                                <a href="{{ route('journal_entry.edit', $item->id) . '?back_url=' . urlencode($currentBackUrl) }}"
                                                     class="text-yellow-500 hover:text-yellow-700 p-2 rounded-full hover:bg-yellow-50 transition-colors"
                                                     title="Edit">
                                                     <i class="fas fa-edit"></i>
@@ -194,15 +195,12 @@
                                             @endcan
 
                                             @can('journal_entry.delete')
-                                                @php
-                                                    $backUrlDelete = route('journal_entry.index') . (request()->getQueryString() ? '?' . request()->getQueryString() : '');
-                                                @endphp
                                                 <form id="delete-form-{{ $item->id }}"
                                                     action="{{ route('journal_entry.destroy', $item->id) }}" method="POST"
                                                     style="display: none;">
                                                     @csrf
                                                     @method('DELETE')
-                                                    <input type="hidden" name="back_url" value="{{ $backUrlDelete }}">
+                                                    <input type="hidden" name="back_url" value="{{ $currentBackUrl }}">
                                                 </form>
 
                                                 <button type="button" onclick="confirmDelete({{ $item->id }})"

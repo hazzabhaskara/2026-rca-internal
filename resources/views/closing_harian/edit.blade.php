@@ -12,6 +12,7 @@
                     <ul class="flex border-b mb-4 space-x-4 text-sm font-medium text-gray-600" role="tablist">
                         <li><a href="#select_item" class="tab-link active">Proces closing harian</a></li>
                         <li><a href="#journal_report" class="tab-link">Journal report</a></li>
+                        <li><a href="#reject" class="tab-link">Reject</a></li>
                     </ul>
                 </div>
                 <div id="select_item" class="tab-content">
@@ -394,6 +395,28 @@
                                 <td class="border"></td>
                             </tr>
                         </tfoot>
+                    </table>
+                </div>
+
+                <div id="reject" class="tab-content hidden">
+                    <h2 class="text-lg font-semibold mb-4">Reject</h2>
+                    <table class="w-full border border-gray-300 text-sm">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="border px-2 py-1">Employee</th>
+                                <th class="border px-2 py-1">Level</th>
+                                <th class="border px-2 py-1">Wahana</th>
+                                <th class="border px-2 py-1">4R</th>
+                                <th class="border px-2 py-1">6R</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rejectBody">
+                            <tr>
+                                <td colspan="5" class="border p-2 text-center text-gray-500">
+                                    Tidak ada data reject
+                                </td>
+                            </tr>
+                        </tbody>
                     </table>
                 </div>
 

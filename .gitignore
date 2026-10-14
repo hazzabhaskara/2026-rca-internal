@@ -4,15 +4,36 @@
 /storage/*.key
 /vendor
 .env
-.env.backup
-.phpunit.result.cache
+.env.*
 Homestead.json
 Homestead.yaml
 npm-debug.log
 yarn-error.log
 
-# Ignore data files
-/data file excel/**/*.xlsx
-/data file excel/**/*.xls
-/data file excel/**/*.csv
+# Ignore data files, dumps, and reports
+/data file excel/
 /database_backups/
+/outputs/
+*.xlsx
+*.xls
+*.csv
+!public/template/*.xlsx
+!public/template/*.xls
+!public/template/*.csv
+*.db
+*.sqlite
+*.bak
+*.log
+
+# Framework Cache
+.phpunit.result.cache
+/storage/framework/views/*
+!/storage/framework/views/.gitignore
+/storage/framework/cache/*
+!/storage/framework/cache/.gitignore
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitignore
+/storage/framework/testing/*
+!/storage/framework/testing/.gitignore
+/storage/logs/*
+!/storage/logs/.gitignore

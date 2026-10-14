@@ -14,8 +14,8 @@ class UserController extends Controller
 {
     public function index(Request $request)
     {
-        $users = User::with('roles')->latest()->get();
-        $roles = Role::all();
+        $users = User::with(['roles', 'employee'])->latest()->get();
+        $roles = Role::with(['permissions', 'users'])->get();
         $employee = Employee::all();
         $permissions = Permission::all();
         $activeTab = $request->get('tab', 'users');

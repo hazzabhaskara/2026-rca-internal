@@ -40,15 +40,18 @@ class NeracaDepartemenController extends Controller
         $format = $request->get('format', 'excel');
         $data = $this->buildReportData($request);
         $dateStr = Carbon::parse($data['tanggalAkhir'])->format('Y-m-d');
-        $modeStr = $data['mode'];
+        $modeStr = $data['mode'] ?? 'matrix';
+        $deptSuffix = ($data['mode'] === 'single' && !empty($data['singleDept']))
+            ? '_' . strtolower(preg_replace('/[^a-zA-Z0-9_-]/', '', $data['singleDept']->kode ?? 'dept'))
+            : '';
 
         if ($format === 'excel') {
-            $filename = "neraca_departemen_{$modeStr}_{$dateStr}.xlsx";
+            $filename = "neraca_departemen_{$modeStr}{$deptSuffix}_{$dateStr}.xlsx";
             return Excel::download(new NeracaDepartemenExport($data), $filename);
         }
 
         if ($format === 'pdf') {
-            $filename = "neraca_departemen_{$modeStr}_{$dateStr}.pdf";
+            $filename = "neraca_departemen_{$modeStr}{$deptSuffix}_{$dateStr}.pdf";
             $viewName = $data['mode'] === 'single'
                 ? 'neraca_departemen.export_pdf_single'
                 : 'neraca_departemen.export_pdf_matrix';
@@ -197,12 +200,31 @@ class NeracaDepartemenController extends Controller
 
         // Default department for single mode
         if ($mode === 'single') {
-            if (!$selectedDeptId || !in_array((int)$selectedDeptId, $deptIds)) {
-                $selectedDeptId = $deptIds[0] ?? null;
-            } else {
+            if ($selectedDeptId === 'konsolidasi') {
+                $selectedDeptId = 'konsolidasi';
+                $singleDept = (object)[
+                    'id' => 'konsolidasi',
+                    'kode' => 'KONSOLIDASI',
+                    'deskripsi' => 'Total Konsolidasi Seluruh Perusahaan'
+                ];
+            } elseif ($selectedDeptId === 'unassigned') {
+                $selectedDeptId = 'unassigned';
+                $singleDept = (object)[
+                    'id' => 'unassigned',
+                    'kode' => 'NON-DEPT',
+                    'deskripsi' => 'Non-Departemen / Unassigned'
+                ];
+            } elseif ($selectedDeptId && in_array((int)$selectedDeptId, $deptIds)) {
                 $selectedDeptId = (int)$selectedDeptId;
+                $singleDept = Departement::find($selectedDeptId);
+            } else {
+                $selectedDeptId = $deptIds[0] ?? 'konsolidasi';
+                $singleDept = is_numeric($selectedDeptId) ? Departement::find((int)$selectedDeptId) : (object)[
+                    'id' => 'konsolidasi',
+                    'kode' => 'KONSOLIDASI',
+                    'deskripsi' => 'Total Konsolidasi Seluruh Perusahaan'
+                ];
             }
-            $singleDept = Departement::find($selectedDeptId);
         } else {
             $singleDept = null;
         }
@@ -279,6 +301,39 @@ class NeracaDepartemenController extends Controller
         $labaBerjalanPerDept['eliminasi'] = 0.0;
         $labaBerjalanPerDept['total'] = $totalLabaKonsolidasi;
 
+        // 2b. Bulk Prior-Year Nominal Movements (< $tanggalAwalTahun) to incorporate into Laba Ditahan (3102000)
+        // Ensures full mathematical balance across prior and current accounting years without requiring database mutations.
+        $jedPrior = DB::table('journal_entry_details as jed')
+            ->join('journal_entries as je', 'je.id', '=', 'jed.journal_entry_id')
+            ->join('chart_of_accounts as coa', 'coa.kode_akun', '=', 'jed.kode_akun')
+            ->leftJoin('departemen_akuns as da', 'da.id', '=', 'jed.departemen_akun_id')
+            ->where('je.tanggal', '<', $tanggalAwalTahun)
+            ->where('je.source', '!=', 'START NEW YEAR')
+            ->whereIn('coa.tipe_akun', ['Pendapatan', 'Beban'])
+            ->select(
+                'coa.tipe_akun',
+                'coa.is_income_tax',
+                'da.departemen_id',
+                DB::raw('SUM(jed.debits) as tot_debit'),
+                DB::raw('SUM(jed.credits) as tot_credit')
+            )
+            ->groupBy('coa.tipe_akun', 'coa.is_income_tax', 'da.departemen_id')
+            ->get();
+
+        $priorLabaMap = [];
+        foreach ($jedPrior as $r) {
+            $deptKey = $r->departemen_id !== null ? (int)$r->departemen_id : 'unassigned';
+            $deb = (float)$r->tot_debit;
+            $crd = (float)$r->tot_credit;
+            if ($r->is_income_tax == 1) {
+                $priorLabaMap[$deptKey] = ($priorLabaMap[$deptKey] ?? 0) - ($deb - $crd);
+            } elseif ($r->tipe_akun === 'Pendapatan') {
+                $priorLabaMap[$deptKey] = ($priorLabaMap[$deptKey] ?? 0) + ($crd - $deb);
+            } elseif ($r->tipe_akun === 'Beban') {
+                $priorLabaMap[$deptKey] = ($priorLabaMap[$deptKey] ?? 0) - ($deb - $crd);
+            }
+        }
+
         // 3. Chart of Accounts Tree (Aset, Kewajiban, Ekuitas)
         $accounts = ChartOfAccount::whereIn('tipe_akun', ['Aset', 'Kewajiban', 'Ekuitas'])
             ->orderBy('kode_akun')
@@ -295,6 +350,9 @@ class NeracaDepartemenController extends Controller
                 $deb = $bsMap[$a->kode_akun][$k]['debit'] ?? 0;
                 $crd = $bsMap[$a->kode_akun][$k]['credit'] ?? 0;
                 $saldo = ($a->tipe_akun === 'Aset') ? ($deb - $crd) : ($crd - $deb);
+                if ($a->kode_akun === '3102000') {
+                    $saldo += ($priorLabaMap[$k] ?? 0);
+                }
                 $saldoSelfByKodeAndDept[$a->kode_akun][$k] = $saldo;
                 $rowSum += $saldo;
             }
@@ -363,6 +421,31 @@ class NeracaDepartemenController extends Controller
             $neraca[$akun->tipe_akun][] = $record;
         }
 
+        // 4b. Pre-compute GROUP ACCOUNT balances from child ACCOUNTs (prefix 2 digits)
+        foreach ($neraca as $tipe => $itemList) {
+            $groupAggByPrefix = [];
+            foreach ($itemList as $it) {
+                if ($it['level_akun'] === 'ACCOUNT') {
+                    $p2 = substr((string)$it['kode_akun'], 0, 2);
+                    foreach ($allKeysWithElimTotal as $k) {
+                        $groupAggByPrefix[$p2][$k] = ($groupAggByPrefix[$p2][$k] ?? 0) + ($it['balances'][$k] ?? 0);
+                    }
+                }
+            }
+
+            foreach ($neraca[$tipe] as $idx => $it) {
+                if ($it['level_akun'] === 'GROUP ACCOUNT') {
+                    $p2 = substr((string)$it['kode_akun'], 0, 2);
+                    $grpBalances = [];
+                    foreach ($allKeysWithElimTotal as $k) {
+                        $grpBalances[$k] = ($it['balances_self'][$k] ?? 0) + ($groupAggByPrefix[$p2][$k] ?? 0);
+                    }
+                    $neraca[$tipe][$idx]['balances'] = $grpBalances;
+                    $neraca[$tipe][$idx]['balances_agg'] = $grpBalances;
+                }
+            }
+        }
+
         // 5. Compute Automatic R/K Balancing Pos per Department
         // RK_d = Total Aktiva_d - (Total Kewajiban_d + Total Ekuitas_Murni_d + Laba_Berjalan_d)
         $rkBalances = [];
@@ -410,17 +493,29 @@ class NeracaDepartemenController extends Controller
             $grandTotals['Pasiva'][$k] = $grandTotals['Kewajiban'][$k] + $grandTotals['Ekuitas'][$k];
         }
 
+        // 7b. Assign Final Grand Totals to HEADER accounts (1000000 ASSET, 2000000 KEWAJIBAN, 3000000 EKUITAS)
+        foreach ($neraca as $tipe => $itemList) {
+            foreach ($neraca[$tipe] as $idx => $it) {
+                if ($it['level_akun'] === 'HEADER') {
+                    $neraca[$tipe][$idx]['balances'] = $grandTotals[$tipe] ?? array_fill_keys($allKeysWithElimTotal, 0.0);
+                    $neraca[$tipe][$idx]['balances_agg'] = $neraca[$tipe][$idx]['balances'];
+                }
+            }
+        }
+
         // 8. Prepare Single Mode Data (if single department selected)
         $singleData = [];
         if ($mode === 'single' && $selectedDeptId) {
+            $targetCol = ($selectedDeptId === 'konsolidasi') ? 'total' : $selectedDeptId;
             $singleData = [
-                'grandTotalAset'      => $grandTotals['Aset'][$selectedDeptId] ?? 0,
-                'grandTotalKewajiban' => $grandTotals['Kewajiban'][$selectedDeptId] ?? 0,
-                'grandTotalEkuitas'   => $grandTotals['Ekuitas'][$selectedDeptId] ?? 0,
-                'totalPasiva'         => $grandTotals['Pasiva'][$selectedDeptId] ?? 0,
-                'labaTahunBerjalan'   => $labaBerjalanPerDept[$selectedDeptId] ?? 0,
-                'rkSaldo'             => $rkBalances[$selectedDeptId] ?? 0,
-                'isBalanced'          => abs(($grandTotals['Aset'][$selectedDeptId] ?? 0) - ($grandTotals['Pasiva'][$selectedDeptId] ?? 0)) < 0.01,
+                'targetCol'           => $targetCol,
+                'grandTotalAset'      => $grandTotals['Aset'][$targetCol] ?? 0,
+                'grandTotalKewajiban' => $grandTotals['Kewajiban'][$targetCol] ?? 0,
+                'grandTotalEkuitas'   => $grandTotals['Ekuitas'][$targetCol] ?? 0,
+                'totalPasiva'         => $grandTotals['Pasiva'][$targetCol] ?? 0,
+                'labaTahunBerjalan'   => $labaBerjalanPerDept[$targetCol] ?? 0,
+                'rkSaldo'             => $rkBalances[$targetCol] ?? 0,
+                'isBalanced'          => abs(($grandTotals['Aset'][$targetCol] ?? 0) - ($grandTotals['Pasiva'][$targetCol] ?? 0)) < 0.01,
             ];
         }
 

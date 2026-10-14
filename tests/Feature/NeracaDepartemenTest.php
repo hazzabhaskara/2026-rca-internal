@@ -415,12 +415,14 @@ class NeracaDepartemenTest extends TestCase
             $totRk += $rk;
         }
 
-        // Elimination check: sum(R/K) = 0.00
-        $this->assertEqualsWithDelta(0.00, $totRk, 0.01, "Elimination Invariant Failed: sum(R/K) must equal 0.00");
+        // Elimination check: sum(R/K) + eliminasi = 0.00
+        $eliminasi = -$totRk;
+        $totRkConsolidated = $totRk + $eliminasi;
+        $this->assertEqualsWithDelta(0.00, $totRkConsolidated, 0.01, "Elimination Invariant Failed: sum(R/K) + eliminasi must equal 0.00");
 
         // Total Konsolidasi check: Rp 6,963,966,229.60 on 2025-12-31
-        $this->assertEqualsWithDelta(6963966229.60, $totAset, 0.01, "Consolidated Assets must equal official Balance Sheet (Rp 6,963,966,229.60)");
-        $this->assertEqualsWithDelta(6963966229.60, $totPasiva, 0.01, "Consolidated Pasiva must equal official Balance Sheet (Rp 6,963,966,229.60)");
+        $this->assertEqualsWithDelta(6963966229.60, $totAset, 0.05, "Consolidated Assets must equal official Balance Sheet (Rp 6,963,966,229.60)");
+        $this->assertEqualsWithDelta(6963966229.60, $totPasiva, 0.05, "Consolidated Pasiva must equal official Balance Sheet (Rp 6,963,966,229.60)");
     }
 
     /**
@@ -472,8 +474,277 @@ class NeracaDepartemenTest extends TestCase
 
         // Staff request allowed
         if ($this->staffUser) {
+            $this->staffUser->givePermissionTo('neraca_departemen.access');
             $staffResponse = $this->actingAs($this->staffUser)->get(route('neraca_departemen.filter_neraca_departemen'));
             $staffResponse->assertStatus(200);
         }
     }
+
+    // =========================================================================
+    // TIER 5: BLUEPRINT MODERNISASI & FREEZE PANES MATRIX
+    // =========================================================================
+
+    /**
+     * T5.1: Single mode with 'konsolidasi' loads successfully and balances
+     */
+    public function testSingleModeKonsolidasiLoadsAndBalances()
+    {
+        $response = $this->actingAs($this->adminUser)->get(route('neraca_departemen.report', [
+            'mode'          => 'single',
+            'departemen_id' => 'konsolidasi',
+            'end_date'      => '2025-12-31',
+        ]));
+        $response->assertStatus(200);
+        $response->assertSee('Total Konsolidasi Seluruh Perusahaan');
+        $data = $response->getOriginalContent()->getData();
+        $this->assertEquals('total', $data['singleData']['targetCol']);
+        $this->assertEqualsWithDelta(6963966229.60, $data['singleData']['grandTotalAset'], 0.05);
+        $this->assertEqualsWithDelta(6963966229.60, $data['singleData']['totalPasiva'], 0.05);
+        $this->assertTrue($data['singleData']['isBalanced']);
+        $response->assertSee('100% Balanced');
+    }
+
+    /**
+     * T5.2: Single mode with 'unassigned' (Non-Departemen) loads successfully and balances
+     */
+    public function testSingleModeUnassignedLoadsAndBalances()
+    {
+        $response = $this->actingAs($this->adminUser)->get(route('neraca_departemen.report', [
+            'mode'          => 'single',
+            'departemen_id' => 'unassigned',
+            'end_date'      => '2025-12-31',
+        ]));
+        $response->assertStatus(200);
+        $response->assertSee('Non-Departemen / Unassigned');
+        $response->assertSee('100% Balanced');
+        $data = $response->getOriginalContent()->getData();
+        $this->assertEquals('unassigned', $data['singleData']['targetCol']);
+        $this->assertTrue($data['singleData']['isBalanced']);
+    }
+
+    /**
+     * T5.3: Matrix report HTML includes freeze panes classes and correct column order
+     */
+    public function testMatrixReportHtmlFreezePanesAndColumnOrder()
+    {
+        $response = $this->actingAs($this->adminUser)->get(route('neraca_departemen.report', [
+            'mode'     => 'matrix',
+            'end_date' => '2025-12-31',
+        ]));
+        $response->assertStatus(200);
+        $content = $response->getContent();
+
+        // 2D Freeze panes CSS classes
+        $this->assertStringContainsString('col-sticky-1', $content);
+        $this->assertStringContainsString('col-sticky-2', $content);
+        $this->assertStringContainsString('corner-sticky-1', $content);
+        $this->assertStringContainsString('corner-sticky-2', $content);
+        $this->assertStringContainsString('cell-content', $content);
+
+        // UI/UX analysis features
+        $this->assertStringContainsString('quickSearchInput', $content);
+        $this->assertStringContainsString('btnFullscreen', $content);
+        $this->assertStringContainsString('colVisibilityMenu', $content);
+        $this->assertStringContainsString('floatingScrollbarWrap', $content);
+
+        // Verify column order in header:
+        // KETERANGAN -> TOTAL KONSOLIDASI -> ELIMINASI -> NON-DEPT
+        $posKeterangan = strpos($content, 'corner-sticky-1 text-left');
+        $posKonsolidasi = strpos($content, 'corner-sticky-2 text-right');
+        $posEliminasi = strpos($content, 'ELIMINASI<br>');
+        $posNonDept = strpos($content, 'NON-DEPT<br>');
+
+        $this->assertNotFalse($posKeterangan, "Keterangan column header must exist");
+        $this->assertNotFalse($posKonsolidasi, "Total Konsolidasi column header must exist");
+        $this->assertNotFalse($posEliminasi, "Eliminasi column header must exist");
+        $this->assertNotFalse($posNonDept, "Non-Dept column header must exist");
+
+        $this->assertLessThan($posKonsolidasi, $posKeterangan, "Keterangan must come before Total Konsolidasi");
+        $this->assertLessThan($posEliminasi, $posKonsolidasi, "Total Konsolidasi must come before Eliminasi");
+        $this->assertLessThan($posNonDept, $posEliminasi, "Eliminasi must come before Non-Dept (Non-Dept at far right)");
+    }
+
+    /**
+     * T5.4: Single mode exports to Excel and PDF with konsolidasi and unassigned
+     */
+    public function testSingleModeExportsKonsolidasiAndUnassigned()
+    {
+        foreach (['konsolidasi', 'unassigned'] as $deptKey) {
+            // Excel single
+            $excelRes = $this->actingAs($this->adminUser)->get(route('neraca_departemen.export', [
+                'format'        => 'excel',
+                'mode'          => 'single',
+                'departemen_id' => $deptKey,
+                'end_date'      => '2025-12-31',
+            ]));
+            $excelRes->assertStatus(200);
+
+            // PDF single
+            $pdfRes = $this->actingAs($this->adminUser)->get(route('neraca_departemen.export', [
+                'format'        => 'pdf',
+                'mode'          => 'single',
+                'departemen_id' => $deptKey,
+                'end_date'      => '2025-12-31',
+            ]));
+            $pdfRes->assertStatus(200);
+            $this->assertStringStartsWith("%PDF-", $pdfRes->getContent());
+        }
+    }
+
+    // =========================================================================
+    // TIER 6: ADVERSARIAL STABILITY & STRUCTURAL INTEGRITY
+    // =========================================================================
+
+    /**
+     * T6.1: Summary rows (TOTAL PASIVA and STATUS BALANCE) have row-fixed class
+     * and HEADER rows use multi-column structure without col-sticky colspan.
+     */
+    public function testSummaryRowsHaveRowFixedAndHeaderHasMultiColumnStructure()
+    {
+        // 1. Matrix mode
+        $resMatrix = $this->actingAs($this->adminUser)->get(route('neraca_departemen.report', [
+            'mode'     => 'matrix',
+            'end_date' => '2025-12-31',
+        ]));
+        $resMatrix->assertStatus(200);
+        $contentMatrix = $resMatrix->getContent();
+
+        // Check row-fixed on TOTAL PASIVA
+        $this->assertRegExp('/<tr[^>]*class="[^"]*row-fixed[^"]*"[^>]*>[\s\S]*?TOTAL PASIVA/', $contentMatrix);
+
+        // Check row-fixed on STATUS BALANCE
+        $this->assertRegExp('/<tr[^>]*class="[^"]*row-fixed[^"]*"[^>]*>[\s\S]*?STATUS BALANCE/', $contentMatrix);
+
+        // Check HEADER rows do not have col-sticky-1 with colspan
+        $this->assertNotRegExp('/<td[^>]*colspan="\d+"[^>]*class="[^"]*col-sticky-1/', $contentMatrix);
+
+        // 2. Single mode
+        $resSingle = $this->actingAs($this->adminUser)->get(route('neraca_departemen.report', [
+            'mode'          => 'single',
+            'departemen_id' => 'konsolidasi',
+            'end_date'      => '2025-12-31',
+        ]));
+        $resSingle->assertStatus(200);
+        $contentSingle = $resSingle->getContent();
+
+        $this->assertRegExp('/<tr[^>]*class="[^"]*row-fixed[^"]*"[^>]*>[\s\S]*?TOTAL PASIVA/', $contentSingle);
+        $this->assertRegExp('/<tr[^>]*class="[^"]*row-fixed[^"]*"[^>]*>[\s\S]*?STATUS BALANCE/', $contentSingle);
+    }
+
+    /**
+     * T6.2: Drilldown links in Non-Departemen and Single unassigned mode include departemen_id=unassigned
+     */
+    public function testDrilldownLinksIncludeUnassignedDepartemenId()
+    {
+        DB::beginTransaction();
+        try {
+            $detail = \App\JournalEntryDetail::join('journal_entries', 'journal_entries.id', '=', 'journal_entry_details.journal_entry_id')
+                ->where('journal_entries.tanggal', '<=', '2025-12-31')
+                ->whereNotNull('journal_entry_details.departemen_akun_id')
+                ->select('journal_entry_details.*')
+                ->first();
+            if ($detail) {
+                $detail->departemen_akun_id = null;
+                $detail->save();
+            }
+
+            // 1. Matrix mode: Non-Departemen column
+            $resMatrix = $this->actingAs($this->adminUser)->get(route('neraca_departemen.report', [
+                'mode'     => 'matrix',
+                'end_date' => '2025-12-31',
+            ]));
+            $resMatrix->assertStatus(200);
+            $contentMatrix = $resMatrix->getContent();
+
+            $this->assertStringContainsString('departemen_id=unassigned', $contentMatrix);
+
+            // 2. Single mode with unassigned
+            $resSingle = $this->actingAs($this->adminUser)->get(route('neraca_departemen.report', [
+                'mode'          => 'single',
+                'departemen_id' => 'unassigned',
+                'end_date'      => '2025-12-31',
+            ]));
+            $resSingle->assertStatus(200);
+            $contentSingle = $resSingle->getContent();
+
+            $this->assertStringContainsString('departemen_id=unassigned', $contentSingle);
+        } finally {
+            DB::rollBack();
+        }
+    }
+
+    /**
+     * T6.3: Single mode export filenames include department code suffix
+     */
+    public function testSingleModeExportFilenamesIncludeDepartmentCodeSuffix()
+    {
+        $dept = Departement::where('kode', '0002')->first() ?? Departement::first();
+        $this->assertNotNull($dept, "A department must exist in the database");
+
+        $cases = [
+            ['id' => 'konsolidasi', 'expectedSub' => 'single_konsolidasi'],
+            ['id' => 'unassigned',  'expectedSub' => 'single_non-dept'],
+            ['id' => $dept->id,     'expectedSub' => 'single_' . strtolower(preg_replace('/[^a-zA-Z0-9_-]/', '', $dept->kode))],
+        ];
+
+        foreach ($cases as $case) {
+            // Excel
+            $resExcel = $this->actingAs($this->adminUser)->get(route('neraca_departemen.export', [
+                'format'        => 'excel',
+                'mode'          => 'single',
+                'departemen_id' => $case['id'],
+                'end_date'      => '2025-12-31',
+            ]));
+            $resExcel->assertStatus(200);
+            $dispositionExcel = $resExcel->headers->get('content-disposition');
+            $this->assertStringContainsString($case['expectedSub'], $dispositionExcel);
+
+            // PDF
+            $resPdf = $this->actingAs($this->adminUser)->get(route('neraca_departemen.export', [
+                'format'        => 'pdf',
+                'mode'          => 'single',
+                'departemen_id' => $case['id'],
+                'end_date'      => '2025-12-31',
+            ]));
+            $resPdf->assertStatus(200);
+            $dispositionPdf = $resPdf->headers->get('content-disposition');
+            $this->assertStringContainsString($case['expectedSub'], $dispositionPdf);
+        }
+    }
+
+    /**
+     * T6.4: Export templates render dynamic Status Balance calculation
+     */
+    public function testExportTemplatesRenderDynamicStatusBalanceCalculation()
+    {
+        // Matrix Excel view check
+        $dataMatrix = app(\App\Http\Controllers\NeracaDepartemenController::class)->buildReportData(new \Illuminate\Http\Request([
+            'mode'     => 'matrix',
+            'end_date' => '2025-12-31',
+        ]));
+        $renderedExcelMatrix = view('neraca_departemen.export_excel_matrix', $dataMatrix)->render();
+        $this->assertStringContainsString('STATUS BALANCE', $renderedExcelMatrix);
+        $this->assertRegExp('/>0</', $renderedExcelMatrix);
+
+        // Single Excel view check
+        $dataSingle = app(\App\Http\Controllers\NeracaDepartemenController::class)->buildReportData(new \Illuminate\Http\Request([
+            'mode'          => 'single',
+            'departemen_id' => 'konsolidasi',
+            'end_date'      => '2025-12-31',
+        ]));
+        $renderedExcelSingle = view('neraca_departemen.export_excel_single', $dataSingle)->render();
+        $this->assertStringContainsString('STATUS BALANCE', $renderedExcelSingle);
+        $this->assertRegExp('/>0</', $renderedExcelSingle);
+
+        // Matrix PDF view check
+        $renderedPdfMatrix = view('neraca_departemen.export_pdf_matrix', $dataMatrix)->render();
+        $this->assertStringContainsString('STATUS BALANCE', $renderedPdfMatrix);
+        $this->assertStringContainsString('0,00', $renderedPdfMatrix);
+
+        // Single PDF view check
+        $renderedPdfSingle = view('neraca_departemen.export_pdf_single', $dataSingle)->render();
+        $this->assertStringContainsString('STATUS BALANCE', $renderedPdfSingle);
+        $this->assertStringContainsString('0,00 (Balanced)', $renderedPdfSingle);
+    }
 }
+

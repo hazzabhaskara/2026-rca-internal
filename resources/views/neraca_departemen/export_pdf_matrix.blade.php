@@ -97,10 +97,10 @@
     @php
         $deptCount = count($departments);
         $keteranganWidth = 22.0;
-        $unassignedWidth = 7.2;
+        $totalWidth = 8.5;
         $eliminasiWidth = 7.5;
-        $totalWidth = 7.5;
-        $remainingWidth = 100.0 - ($keteranganWidth + $unassignedWidth + $eliminasiWidth + $totalWidth);
+        $unassignedWidth = 7.2;
+        $remainingWidth = 100.0 - ($keteranganWidth + $totalWidth + $eliminasiWidth + $unassignedWidth);
         $deptWidth = $deptCount > 0 ? round($remainingWidth / $deptCount, 2) : 0;
     @endphp
 
@@ -108,20 +108,20 @@
         <thead>
             <tr class="bg-head-main">
                 <th style="width: {{ $keteranganWidth }}%; text-align: left; padding-left: 4px;">KETERANGAN / AKUN</th>
+                <th style="width: {{ $totalWidth }}%; text-align: right; background-color: #312e81; color: #e0e7ff;">
+                    TOTAL<br><span style="font-size: 5.5pt; font-weight: normal;">Konsolidasi</span>
+                </th>
                 @foreach ($departments as $dept)
                     <th style="width: {{ $deptWidth }}%; text-align: right;">
                         {{ $dept->kode }}<br>
                         <span style="font-size: 5.5pt; font-weight: normal;">{{ substr($dept->deskripsi, 0, 10) }}</span>
                     </th>
                 @endforeach
-                <th style="width: {{ $unassignedWidth }}%; text-align: right; background-color: #334155;">
-                    NON-DEPT<br><span style="font-size: 5.5pt; font-weight: normal;">Unassigned</span>
-                </th>
                 <th style="width: {{ $eliminasiWidth }}%; text-align: right; background-color: #451a03; color: #fde68a;">
                     ELIMINASI<br><span style="font-size: 5.5pt; font-weight: normal;">R/K Unit</span>
                 </th>
-                <th style="width: {{ $totalWidth }}%; text-align: right; background-color: #312e81; color: #e0e7ff;">
-                    TOTAL<br><span style="font-size: 5.5pt; font-weight: normal;">Konsolidasi</span>
+                <th style="width: {{ $unassignedWidth }}%; text-align: right; background-color: #334155;">
+                    NON-DEPT<br><span style="font-size: 5.5pt; font-weight: normal;">Unassigned</span>
                 </th>
             </tr>
         </thead>
@@ -137,24 +137,6 @@
                     $accountsList = $neraca[$tipe] ?? [];
                 @endphp
 
-                <tr class="{{ $tipeClass }}">
-                    <td style="text-align: left; padding-left: 4px;">{{ $tipeLabels[$tipe] }}</td>
-                    @foreach ($departments as $dept)
-                        <td class="text-right">
-                            {{ number_format($grandTotals[$tipe][$dept->id] ?? 0, 2, ',', '.') }}
-                        </td>
-                    @endforeach
-                    <td class="text-right">
-                        {{ number_format($grandTotals[$tipe]['unassigned'] ?? 0, 2, ',', '.') }}
-                    </td>
-                    <td class="text-right" style="color: #fef08a;">
-                        {{ number_format($grandTotals[$tipe]['eliminasi'] ?? 0, 2, ',', '.') }}
-                    </td>
-                    <td class="text-right">
-                        {{ number_format($grandTotals[$tipe]['total'] ?? 0, 2, ',', '.') }}
-                    </td>
-                </tr>
-
                 @foreach ($accountsList as $item)
                     @php
                         $lvl = $item['level_akun'];
@@ -162,22 +144,52 @@
                     @endphp
 
                     @if ($lvl === 'HEADER')
-                        <tr style="background-color: #f1f5f9; font-weight: bold;">
-                            <td colspan="{{ $deptCount + 4 }}" style="padding-left: 4px; color: #334155;">
-                                {{ $item['nama_akun'] }}
+                        <tr class="{{ $tipeClass }}">
+                            <td style="text-align: left; padding-left: 4px;">
+                                {{ $showAccountNumber ? $item['kode_akun'] . ' - ' . $item['nama_akun'] : $item['nama_akun'] }}
+                            </td>
+                            @php $hTot = $item['balances']['total'] ?? ($grandTotals[$tipe]['total'] ?? 0); @endphp
+                            <td class="text-right">
+                                {{ $hTot < 0 ? '(' . number_format(abs($hTot), 2, ',', '.') . ')' : number_format($hTot, 2, ',', '.') }}
+                            </td>
+                            @foreach ($departments as $dept)
+                                @php $hDept = $item['balances'][$dept->id] ?? ($grandTotals[$tipe][$dept->id] ?? 0); @endphp
+                                <td class="text-right">
+                                    {{ $hDept < 0 ? '(' . number_format(abs($hDept), 2, ',', '.') . ')' : number_format($hDept, 2, ',', '.') }}
+                                </td>
+                            @endforeach
+                            @php $hElim = $item['balances']['eliminasi'] ?? ($grandTotals[$tipe]['eliminasi'] ?? 0); @endphp
+                            <td class="text-right" style="color: #fef08a;">
+                                {{ $hElim < 0 ? '(' . number_format(abs($hElim), 2, ',', '.') . ')' : number_format($hElim, 2, ',', '.') }}
+                            </td>
+                            @php $hUn = $item['balances']['unassigned'] ?? ($grandTotals[$tipe]['unassigned'] ?? 0); @endphp
+                            <td class="text-right">
+                                {{ $hUn < 0 ? '(' . number_format(abs($hUn), 2, ',', '.') . ')' : number_format($hUn, 2, ',', '.') }}
                             </td>
                         </tr>
                     @elseif ($lvl === 'GROUP ACCOUNT')
                         <tr style="background-color: #f8fafc; font-weight: bold;">
                             <td style="padding-left: 8px; color: #475569;">
-                                {{ $item['nama_akun'] }}
+                                {{ $showAccountNumber ? $item['kode_akun'] . ' - ' . $item['nama_akun'] : $item['nama_akun'] }}
+                            </td>
+                            @php $gTot = $item['balances']['total'] ?? 0; @endphp
+                            <td class="text-right font-bold {{ $gTot < 0 ? 'num-neg' : '' }}">
+                                {{ $gTot < 0 ? '(' . number_format(abs($gTot), 2, ',', '.') . ')' : number_format($gTot, 2, ',', '.') }}
                             </td>
                             @foreach ($departments as $dept)
-                                <td class="text-right" style="color: #94a3b8;">—</td>
+                                @php $gDept = $item['balances'][$dept->id] ?? 0; @endphp
+                                <td class="text-right font-bold {{ $gDept < 0 ? 'num-neg' : '' }}">
+                                    {{ $gDept < 0 ? '(' . number_format(abs($gDept), 2, ',', '.') . ')' : number_format($gDept, 2, ',', '.') }}
+                                </td>
                             @endforeach
-                            <td class="text-right" style="color: #94a3b8;">—</td>
-                            <td class="text-right" style="color: #94a3b8;">—</td>
-                            <td class="text-right" style="color: #94a3b8;">—</td>
+                            @php $gElim = $item['balances']['eliminasi'] ?? 0; @endphp
+                            <td class="text-right font-bold {{ $gElim < 0 ? 'num-neg' : '' }}">
+                                {{ $gElim < 0 ? '(' . number_format(abs($gElim), 2, ',', '.') . ')' : number_format($gElim, 2, ',', '.') }}
+                            </td>
+                            @php $gUn = $item['balances']['unassigned'] ?? 0; @endphp
+                            <td class="text-right font-bold {{ $gUn < 0 ? 'num-neg' : '' }}">
+                                {{ $gUn < 0 ? '(' . number_format(abs($gUn), 2, ',', '.') . ')' : number_format($gUn, 2, ',', '.') }}
+                            </td>
                         </tr>
                     @elseif ($lvl === 'ACCOUNT')
                         @if ($isZero) @continue @endif
@@ -185,20 +197,20 @@
                             <td style="padding-left: 12px; font-weight: bold; color: #1e293b;">
                                 {{ $showAccountNumber ? $item['kode_akun'] . ' - ' . $item['nama_akun'] : $item['nama_akun'] }}
                             </td>
+                            @php $vTot = $item['balances']['total'] ?? 0; @endphp
+                            <td class="text-right font-bold {{ $vTot < 0 ? 'num-neg' : '' }}" style="background-color: #f8fafc;">
+                                {{ abs($vTot) > 0.001 ? ($vTot < 0 ? '(' . number_format(abs($vTot), 2, ',', '.') . ')' : number_format($vTot, 2, ',', '.')) : '0,00' }}
+                            </td>
                             @foreach ($departments as $dept)
                                 @php $v = $item['balances'][$dept->id] ?? 0; @endphp
                                 <td class="text-right {{ $v < 0 ? 'num-neg' : '' }}">
                                     {{ abs($v) > 0.001 ? ($v < 0 ? '(' . number_format(abs($v), 2, ',', '.') . ')' : number_format($v, 2, ',', '.')) : '0,00' }}
                                 </td>
                             @endforeach
+                            <td class="text-right" style="color: #94a3b8;">0,00</td>
                             @php $vUn = $item['balances']['unassigned'] ?? 0; @endphp
                             <td class="text-right {{ $vUn < 0 ? 'num-neg' : '' }}">
                                 {{ abs($vUn) > 0.001 ? ($vUn < 0 ? '(' . number_format(abs($vUn), 2, ',', '.') . ')' : number_format($vUn, 2, ',', '.')) : '0,00' }}
-                            </td>
-                            <td class="text-right" style="color: #94a3b8;">0,00</td>
-                            @php $vTot = $item['balances']['total'] ?? 0; @endphp
-                            <td class="text-right font-bold {{ $vTot < 0 ? 'num-neg' : '' }}" style="background-color: #f8fafc;">
-                                {{ abs($vTot) > 0.001 ? ($vTot < 0 ? '(' . number_format(abs($vTot), 2, ',', '.') . ')' : number_format($vTot, 2, ',', '.')) : '0,00' }}
                             </td>
                         </tr>
                     @elseif ($lvl === 'SUB ACCOUNT')
@@ -207,59 +219,59 @@
                             <td style="padding-left: 18px; color: #475569; font-size: 6.3pt;">
                                 {{ $showAccountNumber ? $item['kode_akun'] . ' — ' . $item['nama_akun'] : $item['nama_akun'] }}
                             </td>
+                            @php $vTot = $item['balances']['total'] ?? 0; @endphp
+                            <td class="text-right {{ $vTot < 0 ? 'num-neg' : '' }}" style="font-size: 6.3pt;">
+                                {{ abs($vTot) > 0.001 ? ($vTot < 0 ? '(' . number_format(abs($vTot), 2, ',', '.') . ')' : number_format($vTot, 2, ',', '.')) : '0,00' }}
+                            </td>
                             @foreach ($departments as $dept)
                                 @php $v = $item['balances'][$dept->id] ?? 0; @endphp
                                 <td class="text-right {{ $v < 0 ? 'num-neg' : '' }}" style="font-size: 6.3pt;">
                                     {{ abs($v) > 0.001 ? ($v < 0 ? '(' . number_format(abs($v), 2, ',', '.') . ')' : number_format($v, 2, ',', '.')) : '0,00' }}
                                 </td>
                             @endforeach
+                            <td class="text-right" style="color: #cbd5e1; font-size: 6.3pt;">0,00</td>
                             @php $vUn = $item['balances']['unassigned'] ?? 0; @endphp
                             <td class="text-right {{ $vUn < 0 ? 'num-neg' : '' }}" style="font-size: 6.3pt;">
                                 {{ abs($vUn) > 0.001 ? ($vUn < 0 ? '(' . number_format(abs($vUn), 2, ',', '.') . ')' : number_format($vUn, 2, ',', '.')) : '0,00' }}
-                            </td>
-                            <td class="text-right" style="color: #cbd5e1; font-size: 6.3pt;">0,00</td>
-                            @php $vTot = $item['balances']['total'] ?? 0; @endphp
-                            <td class="text-right {{ $vTot < 0 ? 'num-neg' : '' }}" style="font-size: 6.3pt;">
-                                {{ abs($vTot) > 0.001 ? ($vTot < 0 ? '(' . number_format(abs($vTot), 2, ',', '.') . ')' : number_format($vTot, 2, ',', '.')) : '0,00' }}
                             </td>
                         </tr>
                     @elseif ($lvl === 'X')
                         <tr style="background-color: #faf5ff; font-weight: bold; color: #581c87;">
                             <td style="padding-left: 12px;">{{ $item['nama_akun'] }}</td>
+                            @php $vTot = $item['balances']['total'] ?? 0; @endphp
+                            <td class="text-right {{ $vTot < 0 ? 'num-neg' : '' }}">
+                                {{ $vTot < 0 ? '(' . number_format(abs($vTot), 2, ',', '.') . ')' : number_format($vTot, 2, ',', '.') }}
+                            </td>
                             @foreach ($departments as $dept)
                                 @php $v = $item['balances'][$dept->id] ?? 0; @endphp
                                 <td class="text-right {{ $v < 0 ? 'num-neg' : '' }}">
                                     {{ $v < 0 ? '(' . number_format(abs($v), 2, ',', '.') . ')' : number_format($v, 2, ',', '.') }}
                                 </td>
                             @endforeach
+                            <td class="text-right">0,00</td>
                             @php $vUn = $item['balances']['unassigned'] ?? 0; @endphp
                             <td class="text-right {{ $vUn < 0 ? 'num-neg' : '' }}">
                                 {{ $vUn < 0 ? '(' . number_format(abs($vUn), 2, ',', '.') . ')' : number_format($vUn, 2, ',', '.') }}
-                            </td>
-                            <td class="text-right">0,00</td>
-                            @php $vTot = $item['balances']['total'] ?? 0; @endphp
-                            <td class="text-right {{ $vTot < 0 ? 'num-neg' : '' }}">
-                                {{ $vTot < 0 ? '(' . number_format(abs($vTot), 2, ',', '.') . ')' : number_format($vTot, 2, ',', '.') }}
                             </td>
                         </tr>
                     @elseif ($lvl === 'RK')
                         <tr style="background-color: #eef2ff; font-weight: bold; color: #312e81;">
                             <td style="padding-left: 12px;">{{ $item['nama_akun'] }}</td>
+                            <td class="text-right">0,00</td>
                             @foreach ($departments as $dept)
                                 @php $v = $item['balances'][$dept->id] ?? 0; @endphp
                                 <td class="text-right {{ $v < 0 ? 'num-neg' : '' }}">
                                     {{ $v < 0 ? '(' . number_format(abs($v), 2, ',', '.') . ')' : number_format($v, 2, ',', '.') }}
                                 </td>
                             @endforeach
-                            @php $vUn = $item['balances']['unassigned'] ?? 0; @endphp
-                            <td class="text-right {{ $vUn < 0 ? 'num-neg' : '' }}">
-                                {{ $vUn < 0 ? '(' . number_format(abs($vUn), 2, ',', '.') . ')' : number_format($vUn, 2, ',', '.') }}
-                            </td>
                             @php $vElim = $item['balances']['eliminasi'] ?? 0; @endphp
                             <td class="text-right {{ $vElim < 0 ? 'num-neg' : '' }}" style="background-color: #fef3c7; color: #78350f;">
                                 {{ $vElim < 0 ? '(' . number_format(abs($vElim), 2, ',', '.') . ')' : number_format($vElim, 2, ',', '.') }}
                             </td>
-                            <td class="text-right">0,00</td>
+                            @php $vUn = $item['balances']['unassigned'] ?? 0; @endphp
+                            <td class="text-right {{ $vUn < 0 ? 'num-neg' : '' }}">
+                                {{ $vUn < 0 ? '(' . number_format(abs($vUn), 2, ',', '.') . ')' : number_format($vUn, 2, ',', '.') }}
+                            </td>
                         </tr>
                     @endif
                 @endforeach
@@ -267,19 +279,19 @@
                 {{-- Subtotal Tipe --}}
                 <tr style="background-color: #e2e8f0; font-weight: bold;">
                     <td style="padding-left: 4px;">TOTAL {{ $tipeLabels[$tipe] }}</td>
+                    <td class="text-right">
+                        {{ number_format($grandTotals[$tipe]['total'] ?? 0, 2, ',', '.') }}
+                    </td>
                     @foreach ($departments as $dept)
                         <td class="text-right">
                             {{ number_format($grandTotals[$tipe][$dept->id] ?? 0, 2, ',', '.') }}
                         </td>
                     @endforeach
-                    <td class="text-right">
-                        {{ number_format($grandTotals[$tipe]['unassigned'] ?? 0, 2, ',', '.') }}
-                    </td>
                     <td class="text-right" style="color: #b45309;">
                         {{ number_format($grandTotals[$tipe]['eliminasi'] ?? 0, 2, ',', '.') }}
                     </td>
                     <td class="text-right">
-                        {{ number_format($grandTotals[$tipe]['total'] ?? 0, 2, ',', '.') }}
+                        {{ number_format($grandTotals[$tipe]['unassigned'] ?? 0, 2, ',', '.') }}
                     </td>
                 </tr>
             @endforeach
@@ -287,31 +299,34 @@
             {{-- Total Pasiva --}}
             <tr class="bg-total-pasiva">
                 <td style="padding-left: 4px;">TOTAL PASIVA (KEWAJIBAN &amp; EKUITAS)</td>
+                <td class="text-right" style="color: #6ee7b7;">
+                    {{ number_format($grandTotals['Pasiva']['total'] ?? 0, 2, ',', '.') }}
+                </td>
                 @foreach ($departments as $dept)
                     <td class="text-right" style="color: #6ee7b7;">
                         {{ number_format($grandTotals['Pasiva'][$dept->id] ?? 0, 2, ',', '.') }}
                     </td>
                 @endforeach
-                <td class="text-right" style="color: #6ee7b7;">
-                    {{ number_format($grandTotals['Pasiva']['unassigned'] ?? 0, 2, ',', '.') }}
-                </td>
                 <td class="text-right" style="color: #fde68a;">
                     {{ number_format($grandTotals['Pasiva']['eliminasi'] ?? 0, 2, ',', '.') }}
                 </td>
                 <td class="text-right" style="color: #6ee7b7;">
-                    {{ number_format($grandTotals['Pasiva']['total'] ?? 0, 2, ',', '.') }}
+                    {{ number_format($grandTotals['Pasiva']['unassigned'] ?? 0, 2, ',', '.') }}
                 </td>
             </tr>
 
             {{-- Status Balance --}}
             <tr class="bg-balance">
                 <td style="padding-left: 4px;">STATUS BALANCE (AKTIVA - PASIVA)</td>
+                @php $diffTot = ($grandTotals['Aset']['total'] ?? 0) - ($grandTotals['Pasiva']['total'] ?? 0); @endphp
+                <td class="text-right">{{ abs($diffTot) < 0.01 ? '0,00' : number_format($diffTot, 2, ',', '.') }}</td>
                 @foreach ($departments as $dept)
-                    <td class="text-right">0,00</td>
+                    @php $diff = ($grandTotals['Aset'][$dept->id] ?? 0) - ($grandTotals['Pasiva'][$dept->id] ?? 0); @endphp
+                    <td class="text-right">{{ abs($diff) < 0.01 ? '0,00' : number_format($diff, 2, ',', '.') }}</td>
                 @endforeach
                 <td class="text-right">0,00</td>
-                <td class="text-right">0,00</td>
-                <td class="text-right">0,00</td>
+                @php $diffUn = ($grandTotals['Aset']['unassigned'] ?? 0) - ($grandTotals['Pasiva']['unassigned'] ?? 0); @endphp
+                <td class="text-right">{{ abs($diffUn) < 0.01 ? '0,00' : number_format($diffUn, 2, ',', '.') }}</td>
             </tr>
         </tbody>
     </table>

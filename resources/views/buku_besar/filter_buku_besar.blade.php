@@ -136,19 +136,35 @@
                         </div>
                     </div>
 
+                    {{-- Quick Date Presets --}}
+                    <div class="sm:col-span-2 md:col-span-3">
+                        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Preset Tanggal Cepat</label>
+                        <div class="flex flex-wrap gap-1.5">
+                            <button type="button" onclick="setDatePreset('today')" class="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition">Hari Ini</button>
+                            <button type="button" onclick="setDatePreset('this_month')" class="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition">Bulan Ini</button>
+                            <button type="button" onclick="setDatePreset('last_month')" class="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition">Bulan Lalu</button>
+                            <button type="button" onclick="setDatePreset('this_quarter')" class="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition">Triwulan Ini</button>
+                            <button type="button" onclick="setDatePreset('ytd')" class="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition">Tahun Berjalan (YTD)</button>
+                            <button type="button" onclick="setDatePreset('last_year')" class="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition">Tahun Lalu</button>
+                        </div>
+                    </div>
+
                     {{-- Sort By --}}
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
                         <div class="space-y-1">
                             <label class="inline-flex items-center">
-                                <input type="radio" name="sort_by" value="transaction_number"
-                                    class="text-blue-600 focus:ring-blue-500">
-                                <span class="ml-2 text-sm">Transaction Number</span>
-                            </label>
-                            <label class="inline-flex items-center">
                                 <input type="radio" name="sort_by" value="date"
-                                    class="text-blue-600 focus:ring-blue-500">
+                                    class="text-blue-600 focus:ring-blue-500"
+                                    {{ request('sort_by', 'date') == 'date' ? 'checked' : '' }}>
                                 <span class="ml-2 text-sm">Date</span>
+                            </label>
+                            <br>
+                            <label class="inline-flex items-center">
+                                <input type="radio" name="sort_by" value="transaction_number"
+                                    class="text-blue-600 focus:ring-blue-500"
+                                    {{ request('sort_by') == 'transaction_number' ? 'checked' : '' }}>
+                                <span class="ml-2 text-sm">Transaction Number</span>
                             </label>
                         </div>
                     </div>
@@ -159,14 +175,47 @@
                         <div class="space-y-1">
                             <label class="inline-flex items-center">
                                 <input type="radio" name="show_comment" value="transaction_comment"
-                                    class="text-blue-600 focus:ring-blue-500">
+                                    class="text-blue-600 focus:ring-blue-500"
+                                    {{ request('show_comment') == 'transaction_comment' ? 'checked' : '' }}>
                                 <span class="ml-2 text-sm">Show Transaction Comment</span>
                             </label>
+                            <br>
                             <label class="inline-flex items-center">
                                 <input type="radio" name="show_comment" value="line_comment"
-                                    class="text-blue-600 focus:ring-blue-500">
+                                    class="text-blue-600 focus:ring-blue-500"
+                                    {{ request('show_comment', 'line_comment') == 'line_comment' ? 'checked' : '' }}>
                                 <span class="ml-2 text-sm">Show Line Comment</span>
                             </label>
+                        </div>
+                    </div>
+
+                    {{-- Zero-balance Toggle Filter --}}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Integritas Laporan</label>
+                        <div class="mt-1">
+                            <input type="hidden" name="hide_zero" value="0">
+                            <label class="inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="hide_zero" value="1"
+                                    class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500"
+                                    {{ request('hide_zero', '1') == '1' ? 'checked' : '' }}>
+                                <span class="ml-2 text-sm text-gray-700">Sembunyikan Akun Saldo Nol & Tanpa Mutasi</span>
+                            </label>
+                            <p class="text-xs text-gray-500 mt-1">Jika tidak dicentang, seluruh akun tetap ditampilkan walau saldo Rp 0.</p>
+                        </div>
+                    </div>
+
+                    {{-- Kolom Lawan Transaksi Filter --}}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Kolom Lawan Transaksi</label>
+                        <div class="mt-1">
+                            <input type="hidden" name="show_lawan" value="0">
+                            <label class="inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="show_lawan" value="1"
+                                    class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500"
+                                    {{ request('show_lawan', '0') == '1' ? 'checked' : '' }}>
+                                <span class="ml-2 text-sm text-gray-700">Tampilkan Kolom Lawan Transaksi</span>
+                            </label>
+                            <p class="text-xs text-gray-500 mt-1">Menampilkan nama akun penyeimbang (offset) dari transaksi.</p>
                         </div>
                     </div>
 
@@ -272,5 +321,42 @@
                 row.style.display = text.includes(keyword) ? '' : 'none';
             });
         });
+
+        function setDatePreset(preset) {
+            const today = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            const formatDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+            let start, end;
+            const y = today.getFullYear();
+            const m = today.getMonth(); // 0-indexed
+
+            if (preset === 'today') {
+                start = end = formatDate(today);
+            } else if (preset === 'this_month') {
+                start = formatDate(new Date(y, m, 1));
+                end = formatDate(new Date(y, m + 1, 0));
+            } else if (preset === 'last_month') {
+                start = formatDate(new Date(y, m - 1, 1));
+                end = formatDate(new Date(y, m, 0));
+            } else if (preset === 'this_quarter') {
+                const qStartMonth = Math.floor(m / 3) * 3;
+                start = formatDate(new Date(y, qStartMonth, 1));
+                end = formatDate(new Date(y, qStartMonth + 3, 0));
+            } else if (preset === 'ytd') {
+                start = formatDate(new Date(y, 0, 1));
+                end = formatDate(today);
+            } else if (preset === 'last_year') {
+                start = formatDate(new Date(y - 1, 0, 1));
+                end = formatDate(new Date(y - 1, 11, 31));
+            }
+
+            if (start && end) {
+                const startDateEl = document.getElementById('start_date');
+                const endDateEl = document.getElementById('end_date');
+                if (startDateEl) startDateEl.value = start;
+                if (endDateEl) endDateEl.value = end;
+            }
+        }
     </script>
 @endsection

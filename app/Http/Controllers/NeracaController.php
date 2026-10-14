@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class NeracaController extends Controller
 {
@@ -108,9 +109,10 @@ class NeracaController extends Controller
             ->sum(fn($r) => $r['saldo'] ?? 0);
 
         // 4) Laba Tahun Berjalan (pos 'X') -> tambahkan ke neraca Ekuitas & grand total ekuitas
-        $totalPendapatan = $this->getTotalByTipe('Pendapatan', $tanggalAkhir, 'credit');
-        $totalBeban      = $this->getTotalByTipe('Beban',      $tanggalAkhir, 'debit', false);
-        $totalPajak      = $this->getTotalByPajak($tanggalAkhir);
+        $tanggalAwalTahun = Carbon::parse($tanggalAkhir)->startOfYear()->toDateString();
+        $totalPendapatan = $this->getTotalByTipe('Pendapatan', $tanggalAkhir, 'credit', true, $tanggalAwalTahun);
+        $totalBeban      = $this->getTotalByTipe('Beban',      $tanggalAkhir, 'debit',  true, $tanggalAwalTahun);
+        $totalPajak      = $this->getTotalByPajak($tanggalAkhir, $tanggalAwalTahun);
 
         $labaSebelumPajak  = $totalPendapatan - $totalBeban;
         $labaTahunBerjalan = $labaSebelumPajak - $totalPajak;
@@ -127,6 +129,32 @@ class NeracaController extends Controller
                     'saldo'       => $labaTahunBerjalan,
                 ];
                 $grandTotalEkuitas += $labaTahunBerjalan;
+            }
+        }
+
+        // 5) Hitung total untuk GROUP ACCOUNT dan assign Grand Total ke HEADER
+        foreach ($neraca as $tipe => $items) {
+            $grandForTipe = $tipe === 'Aset' ? $grandTotalAset : ($tipe === 'Kewajiban' ? $grandTotalKewajiban : $grandTotalEkuitas);
+
+            // Hitung sum ACCOUNT per prefix 2-digit untuk GROUP ACCOUNT
+            $groupAggByPrefix = [];
+            foreach ($items as $it) {
+                if ($it['level_akun'] === 'ACCOUNT') {
+                    $p2 = substr((string)$it['kode_akun'], 0, 2);
+                    $groupAggByPrefix[$p2] = ($groupAggByPrefix[$p2] ?? 0) + ($it['saldo'] ?? 0);
+                }
+            }
+
+            foreach ($neraca[$tipe] as $idx => $it) {
+                if ($it['level_akun'] === 'HEADER') {
+                    $neraca[$tipe][$idx]['saldo'] = $grandForTipe;
+                    $neraca[$tipe][$idx]['saldo_agg'] = $grandForTipe;
+                } elseif ($it['level_akun'] === 'GROUP ACCOUNT') {
+                    $p2 = substr((string)$it['kode_akun'], 0, 2);
+                    $grpVal = ($it['saldo_self'] ?? 0) + ($groupAggByPrefix[$p2] ?? 0);
+                    $neraca[$tipe][$idx]['saldo'] = $grpVal;
+                    $neraca[$tipe][$idx]['saldo_agg'] = $grpVal;
+                }
             }
         }
 
@@ -170,57 +198,63 @@ class NeracaController extends Controller
     }
 
     /**
-     * Hitung total saldo per tipe akun
+     * Hitung total saldo per tipe akun untuk tahun berjalan (exclude START NEW YEAR)
      */
-    private function getTotalByTipe($tipe, $tanggalAkhir, $normal = 'credit', $excludePajak = true)
+    private function getTotalByTipe($tipe, $tanggalAkhir, $normal = 'credit', $excludePajak = true, $tanggalAwal = null)
     {
         $query = ChartOfAccount::where('tipe_akun', $tipe);
         if ($excludePajak) {
             $query->where('is_income_tax', '!=', 1);
         }
-        $akuns = $query->get();
+        $kodeAkuns = $query->pluck('kode_akun');
 
-        $total = 0;
-        foreach ($akuns as $akun) {
-            $saldo = JournalEntryDetail::where('kode_akun', $akun->kode_akun)
-                ->whereHas('journalEntry', function ($q) use ($tanggalAkhir) {
-                    if ($tanggalAkhir) {
-                        $q->where('tanggal', '<=', $tanggalAkhir);
-                    }
-                })
-                ->selectRaw('SUM(debits) as total_debit, SUM(credits) as total_credit')
-                ->first();
-
-            if ($normal === 'credit') {
-                $total += ($saldo->total_credit ?? 0) - ($saldo->total_debit ?? 0);
-            } else {
-                $total += ($saldo->total_debit ?? 0) - ($saldo->total_credit ?? 0);
-            }
+        if ($kodeAkuns->isEmpty()) {
+            return 0;
         }
-        return $total;
+
+        $queryJed = DB::table('journal_entry_details as jed')
+            ->join('journal_entries as je', 'je.id', '=', 'jed.journal_entry_id')
+            ->whereIn('jed.kode_akun', $kodeAkuns)
+            ->where('je.source', '!=', 'START NEW YEAR');
+
+        if ($tanggalAwal && $tanggalAkhir) {
+            $queryJed->whereBetween('je.tanggal', [$tanggalAwal, $tanggalAkhir]);
+        } elseif ($tanggalAkhir) {
+            $queryJed->where('je.tanggal', '<=', $tanggalAkhir);
+        }
+
+        $row = $queryJed->selectRaw('SUM(jed.debits) as total_debit, SUM(jed.credits) as total_credit')->first();
+        $totalDebit  = (float) ($row->total_debit ?? 0);
+        $totalCredit = (float) ($row->total_credit ?? 0);
+
+        return $normal === 'credit'
+            ? ($totalCredit - $totalDebit)
+            : ($totalDebit - $totalCredit);
     }
 
     /**
-     * Hitung total pajak (is_income_tax = 1)
+     * Hitung total pajak (is_income_tax = 1) untuk tahun berjalan (exclude START NEW YEAR)
      */
-    private function getTotalByPajak($tanggalAkhir)
+    private function getTotalByPajak($tanggalAkhir, $tanggalAwal = null)
     {
-        $akuns = ChartOfAccount::where('is_income_tax', 1)->get();
-
-        $total = 0;
-        foreach ($akuns as $akun) {
-            $saldo = JournalEntryDetail::where('kode_akun', $akun->kode_akun)
-                ->whereHas('journalEntry', function ($q) use ($tanggalAkhir) {
-                    if ($tanggalAkhir) {
-                        $q->where('tanggal', '<=', $tanggalAkhir);
-                    }
-                })
-                ->selectRaw('SUM(debits) as total_debit, SUM(credits) as total_credit')
-                ->first();
-
-            $total += ($saldo->total_debit ?? 0) - ($saldo->total_credit ?? 0);
+        $kodeAkuns = ChartOfAccount::where('is_income_tax', 1)->pluck('kode_akun');
+        if ($kodeAkuns->isEmpty()) {
+            return 0;
         }
-        return $total;
+
+        $queryJed = DB::table('journal_entry_details as jed')
+            ->join('journal_entries as je', 'je.id', '=', 'jed.journal_entry_id')
+            ->whereIn('jed.kode_akun', $kodeAkuns)
+            ->where('je.source', '!=', 'START NEW YEAR');
+
+        if ($tanggalAwal && $tanggalAkhir) {
+            $queryJed->whereBetween('je.tanggal', [$tanggalAwal, $tanggalAkhir]);
+        } elseif ($tanggalAkhir) {
+            $queryJed->where('je.tanggal', '<=', $tanggalAkhir);
+        }
+
+        $row = $queryJed->selectRaw('SUM(jed.debits) as total_debit, SUM(jed.credits) as total_credit')->first();
+        return (float) (($row->total_debit ?? 0) - ($row->total_credit ?? 0));
     }
 
 
@@ -268,57 +302,17 @@ class NeracaController extends Controller
                 ];
             }
 
-            $grandTotalAset = collect($neraca['Aset'] ?? [])->sum('saldo');
-            $grandTotalKewajiban = collect($neraca['Kewajiban'] ?? [])->sum('saldo');
-            $grandTotalEkuitas = collect($neraca['Ekuitas'] ?? [])->sum('saldo');
+            $grandTotalAset = collect($neraca['Aset'] ?? [])->where('level_akun', 'ACCOUNT')->sum('saldo');
+            $grandTotalKewajiban = collect($neraca['Kewajiban'] ?? [])->where('level_akun', 'ACCOUNT')->sum('saldo');
+            $grandTotalEkuitas = collect($neraca['Ekuitas'] ?? [])->where('level_akun', 'ACCOUNT')->sum('saldo');
 
             // hitung laba tahun berjalan
-            $akunPendapatan = ChartOfAccount::where('tipe_akun', 'Pendapatan')->get();
-            $akunBeban = ChartOfAccount::where('tipe_akun', 'Beban')
-                ->where('is_income_tax', '!=', 1)
-                ->get();
-            $akunPajak = ChartOfAccount::where('is_income_tax', 1)->get();
+            $tanggalAwalTahun = Carbon::parse($tanggalAkhir)->startOfYear()->toDateString();
+            $totalPendapatan = $this->getTotalByTipe('Pendapatan', $tanggalAkhir, 'credit', true, $tanggalAwalTahun);
+            $totalBeban      = $this->getTotalByTipe('Beban',      $tanggalAkhir, 'debit',  true, $tanggalAwalTahun);
+            $totalPajak      = $this->getTotalByPajak($tanggalAkhir, $tanggalAwalTahun);
 
-            $totalPendapatan = 0;
-            foreach ($akunPendapatan as $akun) {
-                $saldo = JournalEntryDetail::where('kode_akun', $akun->kode_akun)
-                    ->whereHas('journalEntry', function ($q) use ($tanggalAkhir) {
-                        if ($tanggalAkhir) {
-                            $q->where('tanggal', '<=', $tanggalAkhir);
-                        }
-                    })
-                    ->selectRaw('SUM(debits) as total_debit, SUM(credits) as total_credit')
-                    ->first();
-                $totalPendapatan += ($saldo->total_credit ?? 0) - ($saldo->total_debit ?? 0);
-            }
-
-            $totalBeban = 0;
-            foreach ($akunBeban as $akun) {
-                $saldo = JournalEntryDetail::where('kode_akun', $akun->kode_akun)
-                    ->whereHas('journalEntry', function ($q) use ($tanggalAkhir) {
-                        if ($tanggalAkhir) {
-                            $q->where('tanggal', '<=', $tanggalAkhir);
-                        }
-                    })
-                    ->selectRaw('SUM(debits) as total_debit, SUM(credits) as total_credit')
-                    ->first();
-                $totalBeban += ($saldo->total_debit ?? 0) - ($saldo->total_credit ?? 0);
-            }
-
-            $totalPajak = 0;
-            foreach ($akunPajak as $akun) {
-                $saldo = JournalEntryDetail::where('kode_akun', $akun->kode_akun)
-                    ->whereHas('journalEntry', function ($q) use ($tanggalAkhir) {
-                        if ($tanggalAkhir) {
-                            $q->where('tanggal', '<=', $tanggalAkhir);
-                        }
-                    })
-                    ->selectRaw('SUM(debits) as total_debit, SUM(credits) as total_credit')
-                    ->first();
-                $totalPajak += ($saldo->total_debit ?? 0) - ($saldo->total_credit ?? 0);
-            }
-
-            $labaSebelumPajak = $totalPendapatan - $totalBeban;
+            $labaSebelumPajak  = $totalPendapatan - $totalBeban;
             $labaTahunBerjalan = $labaSebelumPajak - $totalPajak;
 
             $akunLaba = ChartOfAccount::where('level_akun', 'X')->first();
@@ -330,6 +324,28 @@ class NeracaController extends Controller
                     'saldo'      => $labaTahunBerjalan,
                 ];
                 $grandTotalEkuitas += $labaTahunBerjalan;
+            }
+
+            // Hitung total untuk GROUP ACCOUNT dan assign Grand Total ke HEADER
+            foreach ($neraca as $tipe => $items) {
+                $grandForTipe = $tipe === 'Aset' ? $grandTotalAset : ($tipe === 'Kewajiban' ? $grandTotalKewajiban : $grandTotalEkuitas);
+
+                $groupAggByPrefix = [];
+                foreach ($items as $it) {
+                    if ($it['level_akun'] === 'ACCOUNT') {
+                        $p2 = substr((string)$it['kode_akun'], 0, 2);
+                        $groupAggByPrefix[$p2] = ($groupAggByPrefix[$p2] ?? 0) + ($it['saldo'] ?? 0);
+                    }
+                }
+
+                foreach ($neraca[$tipe] as $idx => $it) {
+                    if ($it['level_akun'] === 'HEADER') {
+                        $neraca[$tipe][$idx]['saldo'] = $grandForTipe;
+                    } elseif ($it['level_akun'] === 'GROUP ACCOUNT') {
+                        $p2 = substr((string)$it['kode_akun'], 0, 2);
+                        $neraca[$tipe][$idx]['saldo'] = ($it['saldo'] ?? 0) + ($groupAggByPrefix[$p2] ?? 0);
+                    }
+                }
             }
 
             // --- end copy paste logika ---

@@ -359,78 +359,38 @@
                                 $grandForTipe = $tipe === 'Aset' ? $grandTotalAset : ($tipe === 'Kewajiban' ? $grandTotalKewajiban : $grandTotalEkuitas);
                             @endphp
 
-                            {{-- ============================
-                                 LEVEL 1: ROW TIPE (ASET/KEWAJIBAN/EKUITAS)
-                            ============================ --}}
-                            <tr class="row-tipe" data-tipe="{{ $tipeId }}" onclick="toggleTipe('{{ $tipeId }}')"
-                                style="background:#1e293b;">
-                                <td colspan="4" class="py-3 px-4" style="color:white;">
-                                    <span class="flex items-center gap-2">
-                                        <span class="toggle-chevron open" id="chevron-{{ $tipeId }}"
-                                            style="background:rgba(255,255,255,0.15); color:white;">
-                                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-                                        </span>
-                                        <span style="font-size:0.85rem; font-weight:700; letter-spacing:0.06em;">{{ strtoupper($tipe) }}</span>
-                                    </span>
-                                </td>
-                            </tr>
-
                             @foreach ($neraca[$tipe] as $akunIndex => $akun)
 
                                 @if ($akun['level_akun'] === 'HEADER')
-                                    {{-- Tutup group sebelumnya --}}
-                                    @if ($currentGroupName && $currentGroupTotal != 0)
-                                        <tr class="row-subtotal collapsible-row {{ $tipeId }}-rows"
-                                            style="background:{{ $col['light'] }};">
-                                            <td class="py-2 px-4 pl-6 font-semibold text-xs uppercase tracking-wide"
-                                                style="color:{{ $col['text'] }};">
-                                                Subtotal {{ $currentGroupName }}
-                                            </td>
-                                            <td></td><td></td>
-                                            <td class="py-2 px-4 text-right font-bold num-cell"
-                                                style="color:{{ $col['text'] }};">
-                                                {!! $currentGroupTotal < 0
-                                                    ? '<span class="num-negative">(' . number_format(abs($currentGroupTotal),2,',','.') . ')</span>'
-                                                    : number_format($currentGroupTotal,2,',','.') !!}
-                                            </td>
-                                        </tr>
-                                        @php $currentGroupName = null; $currentGroupTotal = 0; @endphp
-                                    @endif
-
                                     {{-- ============================
-                                         LEVEL 2: HEADER (bold separator)
+                                         LEVEL 1: HEADER (ASSET, KEWAJIBAN, EKUITAS)
                                     ============================ --}}
-                                    <tr class="collapsible-row {{ $tipeId }}-rows"
-                                        style="background:{{ $col['light'] }}; border-left:4px solid {{ $col['border'] }};">
-                                        <td colspan="4" class="py-2.5 px-4 pl-5 font-bold text-xs uppercase tracking-wider"
-                                            style="color:{{ $col['text'] }};">
-                                            {{ $akun['nama_akun'] }}
+                                    <tr class="row-tipe" data-tipe="{{ $tipeId }}" onclick="toggleTipe('{{ $tipeId }}')"
+                                        style="background:#1e293b; color:white;">
+                                        <td colspan="3" class="py-3 px-4" style="color:white;">
+                                            <span class="flex items-center gap-2">
+                                                <span class="toggle-chevron open" id="chevron-{{ $tipeId }}"
+                                                    style="background:rgba(255,255,255,0.15); color:white;">
+                                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                                                </span>
+                                                <span style="font-size:0.85rem; font-weight:700; letter-spacing:0.06em;">
+                                                    {{ $showAccountNumber ? $akun['kode_akun'] . ' - ' . $akun['nama_akun'] : $akun['nama_akun'] }}
+                                                </span>
+                                            </span>
+                                        </td>
+                                        <td class="py-3 px-4 text-right font-bold num-cell" style="color:white; font-size:0.85rem;">
+                                            {!! ($akun['saldo'] ?? $grandForTipe) < 0
+                                                ? '<span class="text-rose-300">(' . number_format(abs($akun['saldo'] ?? $grandForTipe), 2, ',', '.') . ')</span>'
+                                                : number_format($akun['saldo'] ?? $grandForTipe, 2, ',', '.') !!}
                                         </td>
                                     </tr>
 
                                 @elseif ($akun['level_akun'] === 'GROUP ACCOUNT')
-                                    {{-- Tutup group sebelumnya --}}
-                                    @if ($currentGroupName && $currentGroupTotal != 0)
-                                        <tr class="row-subtotal collapsible-row {{ $tipeId }}-rows"
-                                            style="background:{{ $col['light'] }};">
-                                            <td class="py-2 px-4 pl-6 font-semibold text-xs"
-                                                style="color:{{ $col['text'] }};">
-                                                Subtotal {{ $currentGroupName }}
-                                            </td>
-                                            <td></td><td></td>
-                                            <td class="py-2 px-4 text-right font-bold num-cell"
-                                                style="color:{{ $col['text'] }};">
-                                                {!! $currentGroupTotal < 0
-                                                    ? '<span class="num-negative">(' . number_format(abs($currentGroupTotal),2,',','.') . ')</span>'
-                                                    : number_format($currentGroupTotal,2,',','.') !!}
-                                            </td>
-                                        </tr>
-                                    @endif
                                     @php
                                         $currentGroupName = $akun['nama_akun'];
-                                        $currentGroupTotal = 0;
                                         $groupIndex++;
                                         $groupId = $tipeId . '-group-' . $groupIndex;
+                                        $groupSaldo = $akun['saldo'] ?? 0;
                                     @endphp
 
                                     {{-- ============================
@@ -440,18 +400,21 @@
                                         data-group="{{ $groupId }}"
                                         onclick="toggleGroup('{{ $groupId }}')"
                                         style="background:#f8fafc; border-left:4px solid {{ $col['border'] }};">
-                                        <td class="py-2.5 px-4 pl-8">
+                                        <td colspan="3" class="py-2.5 px-4 pl-8">
                                             <span class="flex items-center gap-2 font-semibold text-slate-700">
                                                 <span class="toggle-chevron open" id="chevron-{{ $groupId }}"
                                                     style="background:{{ $col['light'] }}; color:{{ $col['accent'] }};">
                                                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
                                                 </span>
-                                                {{ $akun['nama_akun'] }}
+                                                {{ $showAccountNumber ? $akun['kode_akun'] . ' - ' . $akun['nama_akun'] : $akun['nama_akun'] }}
                                             </span>
                                         </td>
-                                        <td></td><td></td>
-                                        <td class="py-2.5 px-4 text-right font-bold num-cell text-slate-400 text-xs"
-                                            id="{{ $groupId }}-total">—</td>
+                                        <td class="py-2.5 px-4 text-right font-bold num-cell text-slate-800 text-xs"
+                                            id="{{ $groupId }}-total">
+                                            {!! $groupSaldo < 0
+                                                ? '<span class="num-negative">(' . number_format(abs($groupSaldo), 2, ',', '.') . ')</span>'
+                                                : number_format($groupSaldo, 2, ',', '.') !!}
+                                        </td>
                                     </tr>
 
                                 @elseif ($akun['level_akun'] === 'ACCOUNT')
@@ -575,24 +538,6 @@
                                     </tr>
                                 @endif
                             @endforeach
-
-                            {{-- Subtotal group terakhir --}}
-                            @if ($currentGroupName && $currentGroupTotal != 0)
-                                <tr class="row-subtotal collapsible-row {{ $tipeId }}-rows"
-                                    style="background:{{ $col['light'] }};">
-                                    <td class="py-2 px-4 pl-6 font-semibold text-xs"
-                                        style="color:{{ $col['text'] }};">
-                                        Subtotal {{ $currentGroupName }}
-                                    </td>
-                                    <td></td><td></td>
-                                    <td class="py-2 px-4 text-right font-bold num-cell"
-                                        style="color:{{ $col['text'] }};">
-                                        {!! $currentGroupTotal < 0
-                                            ? '<span class="num-negative">(' . number_format(abs($currentGroupTotal),2,',','.') . ')</span>'
-                                            : number_format($currentGroupTotal,2,',','.') !!}
-                                    </td>
-                                </tr>
-                            @endif
 
                             {{-- ============================
                                  TOTAL per TIPE

@@ -128,44 +128,20 @@
                         $currentGroupTotal = 0;
                     @endphp
 
-                    {{-- HEADER TIPE --}}
-                    <tr class="{{ $config['section'] }}">
-                        <td colspan="4">{{ strtoupper($tipe) }}</td>
-                    </tr>
-
                     @foreach ($neraca[$tipe] as $akun)
                         @if ($akun['level_akun'] === 'HEADER')
-                            @if ($currentGroupName && $currentGroupTotal != 0)
-                                <tr class="{{ $config['group'] }}">
-                                    <td>Subtotal {{ $currentGroupName }}</td>
-                                    <td></td>
-                                    <td></td>
-                                    <td class="text-right">{{ number_format($currentGroupTotal, 2, ',', '.') }}</td>
-                                </tr>
-                                @php $currentGroupName = null; $currentGroupTotal = 0; @endphp
-                            @endif
-                            <tr style="background: #f3f4f6;">
-                                <td colspan="4" style="font-weight: bold;">{{ $akun['nama_akun'] }}</td>
+                            <tr class="{{ $config['section'] }}">
+                                <td colspan="3" style="font-weight: bold;">{{ $akun['kode_akun'] }} - {{ $akun['nama_akun'] }}</td>
+                                <td class="text-right" style="font-weight: bold;">{{ number_format($akun['saldo'] ?? 0, 2, ',', '.') }}</td>
                             </tr>
 
                         @elseif ($akun['level_akun'] === 'GROUP ACCOUNT')
-                            @if ($currentGroupName && $currentGroupTotal != 0)
-                                <tr class="{{ $config['group'] }}">
-                                    <td>Subtotal {{ $currentGroupName }}</td>
-                                    <td></td>
-                                    <td></td>
-                                    <td class="text-right">{{ number_format($currentGroupTotal, 2, ',', '.') }}</td>
-                                </tr>
-                            @endif
                             @php
                                 $currentGroupName = $akun['nama_akun'];
-                                $currentGroupTotal = 0;
                             @endphp
                             <tr class="{{ $config['group'] }}">
-                                <td>{{ $akun['nama_akun'] }}</td>
-                                <td></td>
-                                <td></td>
-                                <td></td>
+                                <td colspan="3" style="font-weight: bold; padding-left: 12px;">{{ $akun['kode_akun'] }} - {{ $akun['nama_akun'] }}</td>
+                                <td class="text-right" style="font-weight: bold;">{{ number_format($akun['saldo'] ?? 0, 2, ',', '.') }}</td>
                             </tr>
 
                         @elseif ($akun['level_akun'] === 'ACCOUNT')
@@ -213,16 +189,6 @@
                             </tr>
                         @endif
                     @endforeach
-
-                    {{-- Subtotal terakhir --}}
-                    @if ($currentGroupName && $currentGroupTotal != 0)
-                        <tr class="{{ $config['group'] }}">
-                            <td>Subtotal {{ $currentGroupName }}</td>
-                            <td></td>
-                            <td></td>
-                            <td class="text-right">{{ number_format($currentGroupTotal, 2, ',', '.') }}</td>
-                        </tr>
-                    @endif
 
                     {{-- TOTAL per tipe --}}
                     <tr class="{{ $config['total'] }}">

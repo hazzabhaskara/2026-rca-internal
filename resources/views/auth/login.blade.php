@@ -150,7 +150,7 @@
 
         <!-- Kanan: Gambar -->
         <div class="hidden md:block md:w-1/2 flex items-center justify-center">
-            <img src="{{ asset('image/page_login_ptcmb.jpg') }}" alt="Login Banner"
+            <img src="{{ asset('image/page_login_rca.jpg') }}?v=1" alt="Login Banner"
                 class="w-full h-full object-contain">
         </div>
 

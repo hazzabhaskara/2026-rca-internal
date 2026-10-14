@@ -47,6 +47,16 @@
                                 <strong>Payment Method:</strong>
                                 <p>{{ $purchaseInvoice->jenisPembayaran->nama_jenis ?? '-' }}</p>
                             </div>
+                            <div>
+                                <strong>Faktur Pajak Coretax:</strong>
+                                @if($purchaseInvoice->is_non_faktur_pajak)
+                                    <p class="mt-1"><span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">⚠️ Non-Faktur (Bon/Nota Manual)</span></p>
+                                @elseif($purchaseInvoice->nomor_faktur_pajak)
+                                    <p class="mt-1"><span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">✅ {{ $purchaseInvoice->nomor_faktur_pajak }}</span></p>
+                                @else
+                                    <p class="text-gray-400 mt-1">-</p>
+                                @endif
+                            </div>
                             <div class="md:col-span-2">
                                 <strong>Shipping Address:</strong>
                                 <p>{{ $purchaseInvoice->shipping_address }}</p>

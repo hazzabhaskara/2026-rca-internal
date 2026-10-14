@@ -23,7 +23,8 @@ class PurchaseInvoice extends Model
         'payment_method_account_id',
         'location_id',
         'status_purchase',
-
+        'nomor_faktur_pajak',
+        'is_non_faktur_pajak',
     ];
 
     public function jenisPembayaran()

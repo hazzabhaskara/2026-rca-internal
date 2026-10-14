@@ -81,23 +81,35 @@
                                         <th class="border px-4 py-3 text-center w-[15%]">Specpose</th>
                                     @endcan
                                     @can('fiscal.access')
-                                        <th class="border px-4 py-3 text-center w-[7%]">Fiscorr</th>
-                                        <th class="border px-4 py-3 text-center w-[15%]">Penyesuaian Fiskal</th>
+                                        @if (($fiscalJournalMode ?? 'disabled') === 'enabled')
+                                            <th class="border px-4 py-3 text-center w-[7%]">Fiscorr</th>
+                                            <th class="border px-4 py-3 text-center w-[15%]">Penyesuaian Fiskal</th>
+                                        @endif
                                     @endcan
-                                    <th class="border px-4 py-3 text-center w-[5%]">Aksi</th>
+                                    <th class="border px-4 py-3 text-center w-[8%]">Aksi</th>
                                 </tr>
 
                             </thead>
                             <tbody id="item-table-body" class="bg-white">
 
                             </tbody>
-                            <tfoot class="bg-gray-50 font-semibold">
+                            <tfoot class="bg-gray-100 font-bold text-gray-800">
                                 <tr>
                                     <td class="border px-4 py-2 text-right">TOTAL</td>
-                                    <td class="border px-4 py-2 text-right" id="total-debit"></td>
-                                    <td class="border px-4 py-2 text-right" id="total-credit"></td>
-                                    <td colspan="2" class="border"></td>
+                                    <td class="border px-4 py-2 text-right font-mono" id="total-debit">0,00</td>
+                                    <td class="border px-4 py-2 text-right font-mono" id="total-credit">0,00</td>
+                                    @php
+                                        $createFooterColspan = 2; // Comment + Aksi
+                                        if (auth()->user()->can('specpose.access')) $createFooterColspan++;
+                                        if (auth()->user()->can('fiscal.access') && ($fiscalJournalMode ?? 'disabled') === 'enabled') $createFooterColspan += 2;
+                                    @endphp
+                                    <td colspan="{{ $createFooterColspan }}" class="border px-4 py-2 text-xs font-normal text-gray-500">
+                                        <div class="flex items-center justify-between">
+                                            <span id="balance-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"></span>
+                                        </div>
+                                    </td>
                                 </tr>
+                            </tfoot>
                         </table>
                     </div>
 
@@ -236,18 +248,24 @@
           </td>
           @endcan
             @can('fiscal.access')
-                <td class="border px-2 py-1 text-center">
+                @if (($fiscalJournalMode ?? 'disabled') === 'enabled')
+                    <td class="border px-2 py-1 text-center">
                         <input type="hidden" name="items[${index}][pajak]" value="0">
                         <input type="checkbox" class="pajak-checkbox" name="items[${index}][pajak]" value="1">
                     </td>
                     <td class="border px-2 py-1 penyesuaian-col text-center">-</td>
+                @elseif (($fiscalJournalMode ?? 'disabled') === 'hide')
+                    <input type="hidden" name="items[${index}][pajak]" value="0">
+                    <input type="hidden" name="items[${index}][penyesuaian_fiskal]" value="">
+                    <input type="hidden" name="items[${index}][kode_fiscal]" value="">
+                @endif
             @endcan
 
-        
-          <td class="border px-2 py-1 text-center space-x-1">
-            <button type="button" class="add-row px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600" data-index="${index}">+</button>
-            <button type="button" class="remove-row px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600" data-index="${index}">X</button>
-          </td>
+            <td class="border px-2 py-1 text-center whitespace-nowrap space-x-1">
+                <button type="button" class="add-row px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-xs font-bold" data-index="${index}" title="Tambah Baris">+</button>
+                <button type="button" class="auto-balance px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs font-bold" data-index="${index}" title="Auto-Balance (Seimbangkan Baris)">⚡</button>
+                <button type="button" class="remove-row px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-xs font-bold" data-index="${index}" title="Hapus Baris">X</button>
+            </td>
         </tr>`;
             }
 
@@ -366,6 +384,29 @@
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2
                 }).format(totalCredit));
+
+                // Real-Time Balance Difference Indicator & Submit Guard
+                const diff = Math.abs(totalDebit - totalCredit);
+                const isBalanced = (diff < 0.01) && (totalDebit > 0 || totalCredit > 0);
+                const badge = $('#balance-badge');
+                const submitBtn = $('button[type="submit"]');
+
+                if (badge.length) {
+                    if (isBalanced) {
+                        badge.removeClass('bg-red-100 text-red-800 border-red-300')
+                             .addClass('bg-emerald-100 text-emerald-800 border border-emerald-300')
+                             .html('<i class="fas fa-check-circle mr-1 text-emerald-600"></i> Balance (Selisih: Rp 0,00)');
+                        submitBtn.prop('disabled', false).removeClass('opacity-50 cursor-not-allowed');
+                    } else {
+                        const diffText = new Intl.NumberFormat('id-ID', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                        }).format(diff);
+                        badge.removeClass('bg-emerald-100 text-emerald-800 border-emerald-300')
+                             .addClass('bg-red-100 text-red-800 border border-red-300')
+                             .html('<i class="fas fa-exclamation-triangle mr-1 text-red-600"></i> Belum Balance (Selisih: Rp ' + diffText + ')');
+                    }
+                }
             }
 
             function formatNumberInput(input) {
@@ -443,6 +484,41 @@
             $(document).on('click', '.remove-row', function() {
                 const index = $(this).data('index');
                 $(`tr[data-index="${index}"]`).remove();
+                updateTotals();
+            });
+
+            // Auto-Balance (Seimbangkan Baris)
+            $(document).on('click', '.auto-balance', function() {
+                const row = $(this).closest('tr');
+                let totalDebit = 0, totalCredit = 0;
+                document.querySelectorAll('input[name^="items"][name$="[debits]"]').forEach(input => {
+                    totalDebit += parseFloat(input.value.replace(/\./g, '').replace(',', '.')) || 0;
+                });
+                document.querySelectorAll('input[name^="items"][name$="[credits]"]').forEach(input => {
+                    totalCredit += parseFloat(input.value.replace(/\./g, '').replace(',', '.')) || 0;
+                });
+
+                const debitInput = row.find('input[name^="items"][name$="[debits]"]');
+                const creditInput = row.find('input[name^="items"][name$="[credits]"]');
+                const curDebit = parseFloat(debitInput.val().replace(/\./g, '').replace(',', '.')) || 0;
+                const curCredit = parseFloat(creditInput.val().replace(/\./g, '').replace(',', '.')) || 0;
+
+                const otherDebit = totalDebit - curDebit;
+                const otherCredit = totalCredit - curCredit;
+
+                if (otherDebit > otherCredit) {
+                    creditInput.val(new Intl.NumberFormat('id-ID', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    }).format(otherDebit - otherCredit));
+                    debitInput.val('0,00');
+                } else if (otherCredit > otherDebit) {
+                    debitInput.val(new Intl.NumberFormat('id-ID', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    }).format(otherCredit - otherDebit));
+                    creditInput.val('0,00');
+                }
                 updateTotals();
             });
 

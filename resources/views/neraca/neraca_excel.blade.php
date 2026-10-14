@@ -36,46 +36,22 @@
                     $currentGroupTotal = 0;
                 @endphp
 
-                {{-- HEADER TIPE --}}
-                <tr style="background-color: {{ $config['headerBg'] }}; color: white;">
-                    <td colspan="4" style="font-weight: bold; padding: 6px;">{{ strtoupper($tipe) }}</td>
-                </tr>
-
                 @foreach ($neraca[$tipe] as $akun)
                     {{-- HEADER --}}
                     @if ($akun['level_akun'] === 'HEADER')
-                        @if ($currentGroupName && $currentGroupTotal != 0)
-                            <tr style="background-color: {{ $config['groupBg'] }};">
-                                <td style="font-weight: bold; padding: 4px;">Subtotal {{ $currentGroupName }}</td>
-                                <td></td>
-                                <td></td>
-                                <td style="text-align: right; font-weight: bold; padding: 4px;">{{ number_format($currentGroupTotal, 2, ',', '.') }}</td>
-                            </tr>
-                            @php $currentGroupName = null; $currentGroupTotal = 0; @endphp
-                        @endif
-                        <tr style="background-color: #f3f4f6;">
-                            <td colspan="4" style="font-weight: bold; padding: 6px;">{{ $akun['nama_akun'] }}</td>
+                        <tr style="background-color: {{ $config['headerBg'] }}; color: white; font-weight: bold;">
+                            <td colspan="3" style="font-weight: bold; padding: 6px;">{{ $akun['kode_akun'] }} - {{ $akun['nama_akun'] }}</td>
+                            <td style="text-align: right; font-weight: bold; padding: 6px;">{{ number_format($akun['saldo'] ?? 0, 2, ',', '.') }}</td>
                         </tr>
 
                     {{-- GROUP ACCOUNT --}}
                     @elseif ($akun['level_akun'] === 'GROUP ACCOUNT')
-                        @if ($currentGroupName && $currentGroupTotal != 0)
-                            <tr style="background-color: {{ $config['groupBg'] }};">
-                                <td style="font-weight: bold; padding: 4px;">Subtotal {{ $currentGroupName }}</td>
-                                <td></td>
-                                <td></td>
-                                <td style="text-align: right; font-weight: bold; padding: 4px;">{{ number_format($currentGroupTotal, 2, ',', '.') }}</td>
-                            </tr>
-                        @endif
                         @php
                             $currentGroupName = $akun['nama_akun'];
-                            $currentGroupTotal = 0;
                         @endphp
-                        <tr style="background-color: {{ $config['groupBg'] }};">
-                            <td style="font-weight: bold; padding: 6px;">{{ $akun['nama_akun'] }}</td>
-                            <td></td>
-                            <td></td>
-                            <td style="text-align: right; font-weight: bold; padding: 6px;"></td>
+                        <tr style="background-color: {{ $config['groupBg'] }}; font-weight: bold;">
+                            <td colspan="3" style="font-weight: bold; padding: 6px; padding-left: 15px;">{{ $akun['kode_akun'] }} - {{ $akun['nama_akun'] }}</td>
+                            <td style="text-align: right; font-weight: bold; padding: 6px;">{{ number_format($akun['saldo'] ?? 0, 2, ',', '.') }}</td>
                         </tr>
 
                     {{-- ACCOUNT --}}
@@ -128,16 +104,6 @@
                         </tr>
                     @endif
                 @endforeach
-
-                {{-- Subtotal group terakhir --}}
-                @if ($currentGroupName && $currentGroupTotal != 0)
-                    <tr style="background-color: {{ $config['groupBg'] }};">
-                        <td style="font-weight: bold; padding: 4px;">Subtotal {{ $currentGroupName }}</td>
-                        <td></td>
-                        <td></td>
-                        <td style="text-align: right; font-weight: bold; padding: 4px;">{{ number_format($currentGroupTotal, 2, ',', '.') }}</td>
-                    </tr>
-                @endif
 
                 {{-- TOTAL per tipe --}}
                 <tr style="background-color: {{ $config['headerBg'] }}; color: white;">

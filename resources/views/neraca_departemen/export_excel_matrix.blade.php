@@ -18,14 +18,14 @@
         <tr><th colspan="{{ count($departments) + 4 }}"></th></tr>
         <tr style="background-color: #1e293b; color: #ffffff; font-weight: bold;">
             <th style="border: 1px solid #000000; width: 35; text-align: left;">KETERANGAN / NAMA AKUN</th>
+            <th style="border: 1px solid #000000; width: 22; text-align: right;">TOTAL KONSOLIDASI</th>
             @foreach ($departments as $dept)
                 <th style="border: 1px solid #000000; width: 18; text-align: right;">
                     {{ $dept->kode }} - {{ $dept->deskripsi }}
                 </th>
             @endforeach
-            <th style="border: 1px solid #000000; width: 18; text-align: right;">NON-DEPARTEMEN</th>
             <th style="border: 1px solid #000000; width: 18; text-align: right;">ELIMINASI R/K</th>
-            <th style="border: 1px solid #000000; width: 22; text-align: right;">TOTAL KONSOLIDASI</th>
+            <th style="border: 1px solid #000000; width: 18; text-align: right;">NON-DEPARTEMEN</th>
         </tr>
     </thead>
     <tbody>
@@ -38,25 +38,6 @@
                 ];
                 $accountsList = $neraca[$tipe] ?? [];
             @endphp
-            {{-- Header Tipe --}}
-            <tr style="background-color: #3b82f6; color: #ffffff; font-weight: bold;">
-                <td style="border: 1px solid #000000; font-weight: bold;">{{ $tipeNames[$tipe] }}</td>
-                @foreach ($departments as $dept)
-                    <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
-                        {{ $grandTotals[$tipe][$dept->id] ?? 0 }}
-                    </td>
-                @endforeach
-                <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
-                    {{ $grandTotals[$tipe]['unassigned'] ?? 0 }}
-                </td>
-                <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
-                    {{ $grandTotals[$tipe]['eliminasi'] ?? 0 }}
-                </td>
-                <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
-                    {{ $grandTotals[$tipe]['total'] ?? 0 }}
-                </td>
-            </tr>
-
             @foreach ($accountsList as $item)
                 @php
                     $lvl = $item['level_akun'];
@@ -64,22 +45,44 @@
                 @endphp
 
                 @if ($lvl === 'HEADER')
-                    <tr style="background-color: #f1f5f9; font-weight: bold;">
-                        <td colspan="{{ count($departments) + 4 }}" style="border: 1px solid #cccccc; font-weight: bold;">
-                            {{ $item['nama_akun'] }}
+                    <tr style="background-color: #1e3a8a; color: #ffffff; font-weight: bold;">
+                        <td style="border: 1px solid #000000; font-weight: bold;">
+                            {{ $showAccountNumber ? $item['kode_akun'] . ' - ' . $item['nama_akun'] : $item['nama_akun'] }}
+                        </td>
+                        <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
+                            {{ $item['balances']['total'] ?? ($grandTotals[$tipe]['total'] ?? 0) }}
+                        </td>
+                        @foreach ($departments as $dept)
+                            <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
+                                {{ $item['balances'][$dept->id] ?? ($grandTotals[$tipe][$dept->id] ?? 0) }}
+                            </td>
+                        @endforeach
+                        <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
+                            {{ $item['balances']['eliminasi'] ?? ($grandTotals[$tipe]['eliminasi'] ?? 0) }}
+                        </td>
+                        <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
+                            {{ $item['balances']['unassigned'] ?? ($grandTotals[$tipe]['unassigned'] ?? 0) }}
                         </td>
                     </tr>
                 @elseif ($lvl === 'GROUP ACCOUNT')
-                    <tr style="background-color: #f8fafc; font-weight: bold;">
+                    <tr style="background-color: #f1f5f9; font-weight: bold;">
                         <td style="border: 1px solid #cccccc; font-weight: bold; padding-left: 10px;">
-                            {{ $item['nama_akun'] }}
+                            {{ $showAccountNumber ? $item['kode_akun'] . ' - ' . $item['nama_akun'] : $item['nama_akun'] }}
+                        </td>
+                        <td style="border: 1px solid #cccccc; text-align: right; font-weight: bold;">
+                            {{ $item['balances']['total'] ?? 0 }}
                         </td>
                         @foreach ($departments as $dept)
-                            <td style="border: 1px solid #cccccc; text-align: right;"></td>
+                            <td style="border: 1px solid #cccccc; text-align: right; font-weight: bold;">
+                                {{ $item['balances'][$dept->id] ?? 0 }}
+                            </td>
                         @endforeach
-                        <td style="border: 1px solid #cccccc; text-align: right;"></td>
-                        <td style="border: 1px solid #cccccc; text-align: right;"></td>
-                        <td style="border: 1px solid #cccccc; text-align: right;"></td>
+                        <td style="border: 1px solid #cccccc; text-align: right; font-weight: bold;">
+                            {{ $item['balances']['eliminasi'] ?? 0 }}
+                        </td>
+                        <td style="border: 1px solid #cccccc; text-align: right; font-weight: bold;">
+                            {{ $item['balances']['unassigned'] ?? 0 }}
+                        </td>
                     </tr>
                 @elseif ($lvl === 'ACCOUNT')
                     @if ($isZero) @continue @endif
@@ -87,17 +90,17 @@
                         <td style="border: 1px solid #e2e8f0; font-weight: 600; padding-left: 20px;">
                             {{ $showAccountNumber ? $item['kode_akun'] . ' - ' . $item['nama_akun'] : $item['nama_akun'] }}
                         </td>
+                        <td style="border: 1px solid #e2e8f0; text-align: right; font-weight: bold;">
+                            {{ $item['balances']['total'] ?? 0 }}
+                        </td>
                         @foreach ($departments as $dept)
                             <td style="border: 1px solid #e2e8f0; text-align: right;">
                                 {{ $item['balances'][$dept->id] ?? 0 }}
                             </td>
                         @endforeach
+                        <td style="border: 1px solid #e2e8f0; text-align: right;">0</td>
                         <td style="border: 1px solid #e2e8f0; text-align: right;">
                             {{ $item['balances']['unassigned'] ?? 0 }}
-                        </td>
-                        <td style="border: 1px solid #e2e8f0; text-align: right;">0</td>
-                        <td style="border: 1px solid #e2e8f0; text-align: right; font-weight: bold;">
-                            {{ $item['balances']['total'] ?? 0 }}
                         </td>
                     </tr>
                 @elseif ($lvl === 'SUB ACCOUNT')
@@ -106,17 +109,17 @@
                         <td style="border: 1px solid #f1f5f9; padding-left: 30px; font-style: italic;">
                             {{ $showAccountNumber ? $item['kode_akun'] . ' — ' . $item['nama_akun'] : $item['nama_akun'] }}
                         </td>
+                        <td style="border: 1px solid #f1f5f9; text-align: right;">
+                            {{ $item['balances']['total'] ?? 0 }}
+                        </td>
                         @foreach ($departments as $dept)
                             <td style="border: 1px solid #f1f5f9; text-align: right;">
                                 {{ $item['balances'][$dept->id] ?? 0 }}
                             </td>
                         @endforeach
-                        <td style="border: 1px solid #f1f5f9; text-align: right;">
-                            {{ $item['balances']['unassigned'] ?? 0 }}
-                        </td>
                         <td style="border: 1px solid #f1f5f9; text-align: right;">0</td>
                         <td style="border: 1px solid #f1f5f9; text-align: right;">
-                            {{ $item['balances']['total'] ?? 0 }}
+                            {{ $item['balances']['unassigned'] ?? 0 }}
                         </td>
                     </tr>
                 @elseif ($lvl === 'X')
@@ -124,17 +127,17 @@
                         <td style="border: 1px solid #d8b4fe; font-weight: bold; padding-left: 20px;">
                             {{ $item['nama_akun'] }}
                         </td>
+                        <td style="border: 1px solid #d8b4fe; text-align: right; font-weight: bold;">
+                            {{ $item['balances']['total'] ?? 0 }}
+                        </td>
                         @foreach ($departments as $dept)
                             <td style="border: 1px solid #d8b4fe; text-align: right; font-weight: bold;">
                                 {{ $item['balances'][$dept->id] ?? 0 }}
                             </td>
                         @endforeach
-                        <td style="border: 1px solid #d8b4fe; text-align: right; font-weight: bold;">
-                            {{ $item['balances']['unassigned'] ?? 0 }}
-                        </td>
                         <td style="border: 1px solid #d8b4fe; text-align: right; font-weight: bold;">0</td>
                         <td style="border: 1px solid #d8b4fe; text-align: right; font-weight: bold;">
-                            {{ $item['balances']['total'] ?? 0 }}
+                            {{ $item['balances']['unassigned'] ?? 0 }}
                         </td>
                     </tr>
                 @elseif ($lvl === 'RK')
@@ -142,18 +145,18 @@
                         <td style="border: 1px solid #c7d2fe; font-weight: bold; padding-left: 20px;">
                             {{ $item['nama_akun'] }}
                         </td>
+                        <td style="border: 1px solid #c7d2fe; text-align: right; font-weight: bold;">0</td>
                         @foreach ($departments as $dept)
                             <td style="border: 1px solid #c7d2fe; text-align: right; font-weight: bold;">
                                 {{ $item['balances'][$dept->id] ?? 0 }}
                             </td>
                         @endforeach
                         <td style="border: 1px solid #c7d2fe; text-align: right; font-weight: bold;">
-                            {{ $item['balances']['unassigned'] ?? 0 }}
-                        </td>
-                        <td style="border: 1px solid #c7d2fe; text-align: right; font-weight: bold;">
                             {{ $item['balances']['eliminasi'] ?? 0 }}
                         </td>
-                        <td style="border: 1px solid #c7d2fe; text-align: right; font-weight: bold;">0</td>
+                        <td style="border: 1px solid #c7d2fe; text-align: right; font-weight: bold;">
+                            {{ $item['balances']['unassigned'] ?? 0 }}
+                        </td>
                     </tr>
                 @endif
             @endforeach
@@ -161,19 +164,19 @@
             {{-- Total per Tipe --}}
             <tr style="background-color: #e2e8f0; font-weight: bold;">
                 <td style="border: 1px solid #000000; font-weight: bold;">TOTAL {{ $tipeNames[$tipe] }}</td>
+                <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
+                    {{ $grandTotals[$tipe]['total'] ?? 0 }}
+                </td>
                 @foreach ($departments as $dept)
                     <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
                         {{ $grandTotals[$tipe][$dept->id] ?? 0 }}
                     </td>
                 @endforeach
                 <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
-                    {{ $grandTotals[$tipe]['unassigned'] ?? 0 }}
-                </td>
-                <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
                     {{ $grandTotals[$tipe]['eliminasi'] ?? 0 }}
                 </td>
                 <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
-                    {{ $grandTotals[$tipe]['total'] ?? 0 }}
+                    {{ $grandTotals[$tipe]['unassigned'] ?? 0 }}
                 </td>
             </tr>
         @endforeach
@@ -181,31 +184,34 @@
         {{-- Grand Total Pasiva --}}
         <tr style="background-color: #0f172a; color: #ffffff; font-weight: bold;">
             <td style="border: 1px solid #000000; font-weight: bold;">TOTAL PASIVA (KEWAJIBAN &amp; EKUITAS)</td>
+            <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
+                {{ $grandTotals['Pasiva']['total'] ?? 0 }}
+            </td>
             @foreach ($departments as $dept)
                 <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
                     {{ $grandTotals['Pasiva'][$dept->id] ?? 0 }}
                 </td>
             @endforeach
             <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
-                {{ $grandTotals['Pasiva']['unassigned'] ?? 0 }}
-            </td>
-            <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
                 {{ $grandTotals['Pasiva']['eliminasi'] ?? 0 }}
             </td>
             <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
-                {{ $grandTotals['Pasiva']['total'] ?? 0 }}
+                {{ $grandTotals['Pasiva']['unassigned'] ?? 0 }}
             </td>
         </tr>
 
         {{-- Status Balance --}}
         <tr style="background-color: #dcfce7; font-weight: bold;">
             <td style="border: 1px solid #86efac; font-weight: bold;">STATUS BALANCE (AKTIVA - PASIVA)</td>
+            @php $diffTot = ($grandTotals['Aset']['total'] ?? 0) - ($grandTotals['Pasiva']['total'] ?? 0); @endphp
+            <td style="border: 1px solid #86efac; text-align: right; font-weight: bold;">{{ abs($diffTot) < 0.01 ? 0 : round($diffTot, 2) }}</td>
             @foreach ($departments as $dept)
-                <td style="border: 1px solid #86efac; text-align: right; font-weight: bold;">0</td>
+                @php $diff = ($grandTotals['Aset'][$dept->id] ?? 0) - ($grandTotals['Pasiva'][$dept->id] ?? 0); @endphp
+                <td style="border: 1px solid #86efac; text-align: right; font-weight: bold;">{{ abs($diff) < 0.01 ? 0 : round($diff, 2) }}</td>
             @endforeach
             <td style="border: 1px solid #86efac; text-align: right; font-weight: bold;">0</td>
-            <td style="border: 1px solid #86efac; text-align: right; font-weight: bold;">0</td>
-            <td style="border: 1px solid #86efac; text-align: right; font-weight: bold;">0</td>
+            @php $diffUn = ($grandTotals['Aset']['unassigned'] ?? 0) - ($grandTotals['Pasiva']['unassigned'] ?? 0); @endphp
+            <td style="border: 1px solid #86efac; text-align: right; font-weight: bold;">{{ abs($diffUn) < 0.01 ? 0 : round($diffUn, 2) }}</td>
         </tr>
     </tbody>
 </table>

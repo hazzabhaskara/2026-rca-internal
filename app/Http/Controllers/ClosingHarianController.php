@@ -24,7 +24,7 @@ class ClosingHarianController extends Controller
     public function create()
     {
         $wahana = Wahana::all();
-        $unitKerja = UnitKerja::all();
+        $unitKerja = UnitKerja::orderBy('urutan')->get();
         $piutangAccount = \App\linkedAccounts::with('akun', 'departemen')
             ->where('modul', 'closing')
             ->where('kode', 'Piutang Qris')
@@ -39,12 +39,12 @@ class ClosingHarianController extends Controller
             ->first();
         $bebanSewaAccount = \App\linkedAccounts::with('akun', 'departemen')
             ->where('modul', 'closing')
-            ->where('kode', 'Beban Bagi Hasil (Sewa)')
+            ->whereIn('kode', ['Beban Bagi Hasil(Sewa)', 'Beban Bagi Hasil (Sewa)'])
             ->first();
 
         $pendapatanOpAccount = \App\linkedAccounts::with('akun', 'departemen')
             ->where('modul', 'closing')
-            ->where('kode', 'Pendapatan Non Operasional Lainnya')
+            ->whereIn('kode', ['Pendapatan Non Operasional', 'Pendapatan Non Operasional Lainnya'])
             ->first();
 
         return view('closing_harian.create', compact('wahana', 'unitKerja', 'piutangAccount', 'kasOmsetAccount', 'titipanOmsetAccount', 'bebanSewaAccount', 'pendapatanOpAccount'));
@@ -90,9 +90,9 @@ class ClosingHarianController extends Controller
             $titipanOmset = linkedAccounts::with(['akun', 'departemen'])
                 ->where('kode', 'Titipan Omset Merchandise')->where('unit_kerja_id', $unitId)->first();
             $bebanSewa = linkedAccounts::with(['akun', 'departemen'])
-                ->where('kode', 'Beban Bagi Hasil(Sewa)')->where('unit_kerja_id', $unitId)->first();
+                ->whereIn('kode', ['Beban Bagi Hasil(Sewa)', 'Beban Bagi Hasil (Sewa)'])->where('unit_kerja_id', $unitId)->first();
             $pendapatanNonOp = linkedAccounts::with(['akun', 'departemen'])
-                ->where('kode', 'Pendapatan Non Operasional')->where('unit_kerja_id', $unitId)->first();
+                ->whereIn('kode', ['Pendapatan Non Operasional', 'Pendapatan Non Operasional Lainnya'])->where('unit_kerja_id', $unitId)->first();
 
             // dump([
             //     'piutangQrisAccount' => $piutangQrisAccount,
@@ -323,9 +323,7 @@ class ClosingHarianController extends Controller
                 ->with('success', 'Closing harian berhasil disimpan.');
         } catch (\Throwable $e) {
             DB::rollBack();
-            // dd('❌ Error:', $e->getMessage(), $e->getTraceAsString(), [
-            //     'request_items' => $request->items
-            // ]);
+            return back()->withInput()->with('error', 'Gagal menyimpan closing harian: ' . $e->getMessage());
         }
     }
 
@@ -355,9 +353,9 @@ class ClosingHarianController extends Controller
             $titipanOmset = linkedAccounts::with(['akun', 'departemen'])
                 ->where('kode', 'Titipan Omset Merchandise')->where('unit_kerja_id', $unitId)->first();
             $bebanSewa = linkedAccounts::with(['akun', 'departemen'])
-                ->where('kode', 'Beban Bagi Hasil(Sewa)')->where('unit_kerja_id', $unitId)->first();
+                ->whereIn('kode', ['Beban Bagi Hasil(Sewa)', 'Beban Bagi Hasil (Sewa)'])->where('unit_kerja_id', $unitId)->first();
             $pendapatanNonOp = linkedAccounts::with(['akun', 'departemen'])
-                ->where('kode', 'Pendapatan Non Operasional')->where('unit_kerja_id', $unitId)->first();
+                ->whereIn('kode', ['Pendapatan Non Operasional', 'Pendapatan Non Operasional Lainnya'])->where('unit_kerja_id', $unitId)->first();
 
             // 🔹 1️⃣ Update header basic info
             $closing->update([
@@ -594,7 +592,7 @@ class ClosingHarianController extends Controller
                 ->with('success', 'Closing harian berhasil diperbarui.');
         } catch (\Throwable $e) {
             DB::rollBack();
-            throw $e;
+            return back()->withInput()->with('error', 'Gagal memperbarui closing harian: ' . $e->getMessage());
         }
     }
 

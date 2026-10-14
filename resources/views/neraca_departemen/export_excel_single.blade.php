@@ -1,5 +1,5 @@
 @php
-    $singleId = $selectedDeptId;
+    $singleId = $singleData['targetCol'] ?? (($selectedDeptId === 'konsolidasi') ? 'total' : $selectedDeptId);
 @endphp
 <table>
     <thead>
@@ -36,13 +36,6 @@
                 ];
                 $accountsList = $neraca[$tipe] ?? [];
             @endphp
-            <tr style="background-color: #3b82f6; color: #ffffff; font-weight: bold;">
-                <td colspan="3" style="border: 1px solid #000000; font-weight: bold;">{{ $tipeNames[$tipe] }}</td>
-                <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
-                    {{ $grandTotals[$tipe][$singleId] ?? 0 }}
-                </td>
-            </tr>
-
             @foreach ($accountsList as $item)
                 @php
                     $lvl = $item['level_akun'];
@@ -52,19 +45,25 @@
                 @endphp
 
                 @if ($lvl === 'HEADER')
-                    <tr style="background-color: #f1f5f9; font-weight: bold;">
-                        <td colspan="4" style="border: 1px solid #cccccc; font-weight: bold;">
-                            {{ $item['nama_akun'] }}
+                    @php
+                        $hVal = $vAgg != 0 ? $vAgg : ($grandTotals[$tipe][$singleId] ?? 0);
+                    @endphp
+                    <tr style="background-color: #1e3a8a; color: #ffffff; font-weight: bold;">
+                        <td colspan="3" style="border: 1px solid #000000; font-weight: bold;">
+                            {{ $showAccountNumber ? $item['kode_akun'] . ' - ' . $item['nama_akun'] : $item['nama_akun'] }}
+                        </td>
+                        <td style="border: 1px solid #000000; text-align: right; font-weight: bold;">
+                            {{ $hVal }}
                         </td>
                     </tr>
                 @elseif ($lvl === 'GROUP ACCOUNT')
-                    <tr style="background-color: #f8fafc; font-weight: bold;">
-                        <td style="border: 1px solid #cccccc; font-weight: bold; padding-left: 10px;">
-                            {{ $item['nama_akun'] }}
+                    <tr style="background-color: #f1f5f9; font-weight: bold;">
+                        <td colspan="3" style="border: 1px solid #cccccc; font-weight: bold; padding-left: 10px;">
+                            {{ $showAccountNumber ? $item['kode_akun'] . ' - ' . $item['nama_akun'] : $item['nama_akun'] }}
                         </td>
-                        <td style="border: 1px solid #cccccc;"></td>
-                        <td style="border: 1px solid #cccccc;"></td>
-                        <td style="border: 1px solid #cccccc; text-align: right;"></td>
+                        <td style="border: 1px solid #cccccc; text-align: right; font-weight: bold;">
+                            {{ $vAgg }}
+                        </td>
                     </tr>
                 @elseif ($lvl === 'ACCOUNT')
                     @if ($isZero) @continue @endif
@@ -132,7 +131,8 @@
 
         <tr style="background-color: #dcfce7; font-weight: bold;">
             <td colspan="3" style="border: 1px solid #86efac; font-weight: bold;">STATUS BALANCE (AKTIVA - PASIVA)</td>
-            <td style="border: 1px solid #86efac; text-align: right; font-weight: bold;">0</td>
+            @php $diffSingle = ($grandTotals['Aset'][$singleId] ?? 0) - ($grandTotals['Pasiva'][$singleId] ?? 0); @endphp
+            <td style="border: 1px solid #86efac; text-align: right; font-weight: bold;">{{ abs($diffSingle) < 0.01 ? 0 : round($diffSingle, 2) }}</td>
         </tr>
     </tbody>
 </table>

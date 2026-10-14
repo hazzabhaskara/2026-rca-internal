@@ -17,84 +17,26 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
 use SebastianBergmann\CodeCoverage\Report\Xml\Unit;
+use App\Services\CashFlowService;
 
 class ReportController extends Controller
 {
+    protected $cashFlowService;
+
+    public function __construct(CashFlowService $cashFlowService)
+    {
+        $this->cashFlowService = $cashFlowService;
+    }
+
     /**
      * Mapping Klasifikasi Akun ke Aktivitas Arus Kas (Metode Langsung)
      */
-    const AKTIVITAS_MAPPING = [
-        // ===== AKTIVITAS OPERASIONAL =====
-        'Cash' => 'Operasional',
-        'Bank' => 'Operasional',
-        'Operating Revenue' => 'Operasional',
-        'Other Revenue' => 'Operasional',
-        'Non-Operating Revenue' => 'Operasional',
-        'Revenue' => 'Operasional',
-        'Accounts Receivable' => 'Operasional',
-        'Other Receivables' => 'Operasional',
-        'Accounts Payable' => 'Operasional',
-        'Other Payable' => 'Operasional',
-        'Inventory' => 'Operasional',
-        'Other Current Asset' => 'Operasional',
-        'Current Asset' => 'Operasional',
-        'Current Liability' => 'Operasional',
-        'Other Current Liability' => 'Operasional',
-        'Payroll Expense' => 'Operasional',
-        'Operating Expense' => 'Operasional',
-        'General & Admin. Expense' => 'Operasional',
-        'Cost of Goods Sold' => 'Operasional',
-        'Income Tax Expense' => 'Operasional',
-        'Non-Operating Expense' => 'Operasional',
-        'Credit Card Receivable' => 'Operasional',
-        'Credit Card Payable' => 'Operasional',
-        'Cash Equivalents' => 'Operasional',
-        'Allowance for Bad Debts' => 'Operasional',
-        'Sales Tax Payable' => 'Operasional',
-        'Payroll Tax Payable' => 'Operasional',
-        'Employee Deductions Payable' => 'Operasional',
-        'Income Tax Payable' => 'Operasional',
-        'Deferred Revenue' => 'Operasional',
-        'Deferred Income Taxes' => 'Operasional',
-        'Employee Benefits' => 'Operasional',
-        'Expense' => 'Operasional',
-        'Extraordinary Gain' => 'Operasional',
-        'Extraordinary Loss' => 'Operasional',
-        
-        // ===== AKTIVITAS INVESTASI =====
-        'Capital Asset' => 'Investasi',
-        'Accum. Amort./Depreciation' => 'Investasi',
-        'Other Non-Current Asset' => 'Investasi',
-        'Other Asset' => 'Investasi',
-        'Marketable Securities' => 'Investasi',
-        'Long Term Receivables' => 'Investasi',
-        'Other Long Term Investments' => 'Investasi',
-        'Gain' => 'Investasi',
-        'Loss' => 'Investasi',
-        
-        // ===== AKTIVITAS PENDANAAN =====
-        'Share Capital' => 'Pendanaan',
-        'Retained Earnings' => 'Pendanaan',
-        'Current Earnings' => 'Pendanaan',
-        'Owner/Partner Contributions' => 'Pendanaan',
-        'Owner/Partner Withdrawals' => 'Pendanaan',
-        'Dividends' => 'Pendanaan',
-        'Long Term Debt' => 'Pendanaan',
-        'Short Term Debt' => 'Pendanaan',
-        'Debt' => 'Pendanaan',
-        'Long Term Liability' => 'Pendanaan',
-        'Other Non-Current Liability' => 'Pendanaan',
-        'Other Liability' => 'Pendanaan',
-        'Interest Expense' => 'Pendanaan',
-    ];
+    const AKTIVITAS_MAPPING = CashFlowService::AKTIVITAS_MAPPING;
     
     /**
      * Klasifikasi yang tidak menghasilkan arus kas (non-cash)
      */
-    const NON_CASH_KLASIFIKASI = [
-        'Amort./Depreciation Expense',
-        'Bad Debt Expense',
-    ];
+    const NON_CASH_KLASIFIKASI = CashFlowService::NON_CASH_KLASIFIKASI;
     
     //
 
@@ -460,163 +402,49 @@ class ReportController extends Controller
     }
     public function aruskasFilter()
     {
-        $account = \App\ChartOfAccount::whereHas('klasifikasiAkun', function ($query) {
-            $query->whereIn('nama_klasifikasi', ['Cash', 'Bank']);
-        })->get();
+        $account = $this->cashFlowService->getAvailableCashBankAccounts();
         $tahun_buku = StartNewYear::all();
 
         return view('arus_kas.filter_arus_kas', compact('account', 'tahun_buku'));
     }
+
     public function reportArusKas(Request $request)
     {
         $tanggalAwal = $request->start_date;
         $tanggalAkhir = $request->end_date;
         $displayMode = $request->display_mode ?? 'source';
+        $selectedAccountsRaw = $request->selected_accounts;
 
-        // 1️⃣ Ambil akun kas/bank
-        $selectedAccountsRaw = explode(',', $request->selected_accounts ?? '');
-        $selectedAccountCodes = [];
-        foreach ($selectedAccountsRaw as $item) {
-            $parts = explode(' - ', $item);
-            if (count($parts) > 0) {
-                $selectedAccountCodes[] = trim($parts[0]);
-            }
-        }
+        $cashFlowData = $this->cashFlowService->getCashFlowData(
+            $tanggalAwal,
+            $tanggalAkhir,
+            $selectedAccountsRaw,
+            $displayMode
+        );
 
-        if (empty($selectedAccountCodes)) {
-            $selectedAccountCodes = \App\ChartOfAccount::whereHas('klasifikasiAkun', function ($q) {
-                $q->whereIn('nama_klasifikasi', ['Cash', 'Bank']);
-            })->pluck('kode_akun')->toArray();
-        }
+        $rows = $cashFlowData['rows'];
+        $aktivitasData = $cashFlowData['aktivitasData'];
+        $saldoAwal = $cashFlowData['saldoAwal'];
+        $saldoAkhir = $cashFlowData['saldoAkhir'];
+        $grandCashIn = $cashFlowData['grandCashIn'];
+        $grandCashOut = $cashFlowData['grandCashOut'];
+        $netCashFlow = $cashFlowData['netCashFlow'];
 
-        // 2️⃣ Ambil semua jurnal di rentang tanggal (dengan klasifikasi akun)
-        $journalEntries = \App\JournalEntry::with(['details.chartOfAccount.klasifikasiAkun'])
-            ->whereBetween('tanggal', [$tanggalAwal, $tanggalAkhir])
-            ->get();
+        $tahun_buku = StartNewYear::all();
 
-        $rows = [];
-
-        // 3️⃣ Loop tiap jurnal (group per source)
-        foreach ($journalEntries as $entry) {
-            $details = $entry->details;
-
-            // pisahkan kas vs lawan
-            $kasDetails = $details->whereIn('kode_akun', $selectedAccountCodes);
-            $lawanDetails = $details->whereNotIn('kode_akun', $selectedAccountCodes);
-
-            if ($kasDetails->isEmpty() || $lawanDetails->isEmpty()) continue;
-
-            // total lawan untuk proporsi
-            $totalDebetLawan = $lawanDetails->sum('debits');
-            $totalKreditLawan = $lawanDetails->sum('credits');
-
-            foreach ($kasDetails as $kas) {
-                $isCashIn = $kas->debits > 0;
-                $totalKas = $isCashIn ? $kas->debits : $kas->credits;
-
-                foreach ($lawanDetails as $lawan) {
-                    // ambil nilai proporsi berdasarkan sisi lawan
-                    $nilaiLawan = $isCashIn ? $lawan->credits : $lawan->debits;
-                    $totalLawan = $isCashIn ? $totalKreditLawan : $totalDebetLawan;
-
-                    if ($totalLawan == 0) $totalLawan = 1; // hindari div/0
-                    $proporsi = $nilaiLawan / $totalLawan;
-                    $nilaiKasProporsional = $totalKas * $proporsi;
-
-                    // Get klasifikasi akun dari lawan akun
-                    $klasifikasiAkun = $lawan->chartOfAccount->klasifikasiAkun->nama_klasifikasi ?? 'Lainnya';
-                    $aktivitas = self::AKTIVITAS_MAPPING[$klasifikasiAkun] ?? 'Operasional';
-                    
-                    // Skip non-cash items
-                    if (in_array($klasifikasiAkun, self::NON_CASH_KLASIFIKASI)) {
-                        continue;
-                    }
-
-                    $rows[] = [
-                        'tanggal'          => $entry->tanggal,
-                        'source'           => $entry->source,
-                        'akun_kas'         => $kas->kode_akun . ' - ' . ($kas->chartOfAccount->nama_akun ?? ''),
-                        'kode_kas'         => $kas->kode_akun,
-                        'lawan_akun'       => $lawan->kode_akun . ' - ' . ($lawan->chartOfAccount->nama_akun ?? ''),
-                        'kode_lawan'       => $lawan->kode_akun,
-                        'nama_lawan'       => $lawan->chartOfAccount->nama_akun ?? '',
-                        'klasifikasi_akun' => $klasifikasiAkun,
-                        'aktivitas'        => $aktivitas,
-                        'line_comment'     => $lawan->comment ?? $kas->comment ?? '',
-                        'keterangan'       => $entry->comment ?? '',
-                        'cash_in'          => $isCashIn ? $nilaiKasProporsional : 0,
-                        'cash_out'         => !$isCashIn ? $nilaiKasProporsional : 0,
-                    ];
-                }
-            }
-        }
-        
-        // 4️⃣ Jika mode direct, group by aktivitas dan klasifikasi
-        $aktivitasData = [];
-        if ($displayMode === 'direct') {
-            $aktivitasData = $this->groupByAktivitas($rows);
-        }
-
-        return view('arus_kas.report_arus_kas', compact('rows', 'tanggalAwal', 'tanggalAkhir', 'displayMode', 'aktivitasData'));
-    }
-    
-    /**
-     * Group rows by aktivitas for Direct Method display
-     */
-    private function groupByAktivitas($rows)
-    {
-        // Get klasifikasi id (kode_klasifikasi) from database for sorting
-        $klasifikasiUrutan = \App\KlasifikasiAkun::pluck('id', 'nama_klasifikasi')->toArray();
-        
-        $aktivitas = [
-            'Operasional' => [
-                'label' => 'Arus Kas dari Aktivitas Operasional',
-                'items' => [],
-                'cash_in' => 0,
-                'cash_out' => 0,
-            ],
-            'Investasi' => [
-                'label' => 'Arus Kas dari Aktivitas Investasi',
-                'items' => [],
-                'cash_in' => 0,
-                'cash_out' => 0,
-            ],
-            'Pendanaan' => [
-                'label' => 'Arus Kas dari Aktivitas Pendanaan',
-                'items' => [],
-                'cash_in' => 0,
-                'cash_out' => 0,
-            ],
-        ];
-        
-        // Group by klasifikasi within each aktivitas
-        foreach ($rows as $row) {
-            $akt = $row['aktivitas'];
-            $klasifikasi = $row['klasifikasi_akun'];
-            
-            if (!isset($aktivitas[$akt]['items'][$klasifikasi])) {
-                $aktivitas[$akt]['items'][$klasifikasi] = [
-                    'label' => $klasifikasi,
-                    'urutan' => $klasifikasiUrutan[$klasifikasi] ?? 999,
-                    'cash_in' => 0,
-                    'cash_out' => 0,
-                ];
-            }
-            
-            $aktivitas[$akt]['items'][$klasifikasi]['cash_in'] += $row['cash_in'];
-            $aktivitas[$akt]['items'][$klasifikasi]['cash_out'] += $row['cash_out'];
-            $aktivitas[$akt]['cash_in'] += $row['cash_in'];
-            $aktivitas[$akt]['cash_out'] += $row['cash_out'];
-        }
-        
-        // Sort items within each aktivitas by urutan
-        foreach ($aktivitas as $key => &$akt) {
-            uasort($akt['items'], function($a, $b) {
-                return ($a['urutan'] ?? 999) <=> ($b['urutan'] ?? 999);
-            });
-        }
-        
-        return $aktivitas;
+        return view('arus_kas.report_arus_kas', compact(
+            'rows',
+            'tanggalAwal',
+            'tanggalAkhir',
+            'displayMode',
+            'aktivitasData',
+            'saldoAwal',
+            'saldoAkhir',
+            'grandCashIn',
+            'grandCashOut',
+            'netCashFlow',
+            'tahun_buku'
+        ));
     }
 
     /**
@@ -628,77 +456,56 @@ class ReportController extends Controller
         $tanggalAkhir = $request->end_date;
         $displayMode = $request->display_mode ?? 'source';
         $format = $request->format ?? 'excel';
+        $selectedAccountsRaw = $request->selected_accounts;
 
-        // Get data using same logic as reportArusKas
-        $selectedAccountsRaw = explode(',', $request->selected_accounts ?? '');
-        $selectedAccountCodes = [];
-        foreach ($selectedAccountsRaw as $item) {
-            $parts = explode(' - ', $item);
-            if (count($parts) > 0) {
-                $selectedAccountCodes[] = trim($parts[0]);
-            }
-        }
+        $cashFlowData = $this->cashFlowService->getCashFlowData(
+            $tanggalAwal,
+            $tanggalAkhir,
+            $selectedAccountsRaw,
+            $displayMode
+        );
 
-        if (empty($selectedAccountCodes)) {
-            $selectedAccountCodes = \App\ChartOfAccount::whereHas('klasifikasiAkun', function ($q) {
-                $q->whereIn('nama_klasifikasi', ['Cash', 'Bank']);
-            })->pluck('kode_akun')->toArray();
-        }
-
-        $journalEntries = \App\JournalEntry::with(['details.chartOfAccount'])
-            ->whereBetween('tanggal', [$tanggalAwal, $tanggalAkhir])
-            ->get();
-
-        $rows = [];
-
-        foreach ($journalEntries as $entry) {
-            $details = $entry->details;
-            $kasDetails = $details->whereIn('kode_akun', $selectedAccountCodes);
-            $lawanDetails = $details->whereNotIn('kode_akun', $selectedAccountCodes);
-
-            if ($kasDetails->isEmpty() || $lawanDetails->isEmpty()) continue;
-
-            $totalDebetLawan = $lawanDetails->sum('debits');
-            $totalKreditLawan = $lawanDetails->sum('credits');
-
-            foreach ($kasDetails as $kas) {
-                $isCashIn = $kas->debits > 0;
-                $totalKas = $isCashIn ? $kas->debits : $kas->credits;
-
-                foreach ($lawanDetails as $lawan) {
-                    $nilaiLawan = $isCashIn ? $lawan->credits : $lawan->debits;
-                    $totalLawan = $isCashIn ? $totalKreditLawan : $totalDebetLawan;
-
-                    if ($totalLawan == 0) $totalLawan = 1;
-                    $proporsi = $nilaiLawan / $totalLawan;
-                    $nilaiKasProporsional = $totalKas * $proporsi;
-
-                    $rows[] = [
-                        'tanggal'      => $entry->tanggal,
-                        'source'       => $entry->source,
-                        'akun_kas'     => $kas->kode_akun . ' - ' . ($kas->chartOfAccount->nama_akun ?? ''),
-                        'kode_kas'     => $kas->kode_akun,
-                        'lawan_akun'   => $lawan->kode_akun . ' - ' . ($lawan->chartOfAccount->nama_akun ?? ''),
-                        'line_comment' => $lawan->comment ?? $kas->comment ?? '',
-                        'keterangan'   => $entry->comment ?? '',
-                        'cash_in'      => $isCashIn ? $nilaiKasProporsional : 0,
-                        'cash_out'     => !$isCashIn ? $nilaiKasProporsional : 0,
-                    ];
-                }
-            }
-        }
+        $rows = $cashFlowData['rows'];
+        $aktivitasData = $cashFlowData['aktivitasData'];
+        $saldoAwal = $cashFlowData['saldoAwal'];
+        $saldoAkhir = $cashFlowData['saldoAkhir'];
+        $grandCashIn = $cashFlowData['grandCashIn'];
+        $grandCashOut = $cashFlowData['grandCashOut'];
+        $netCashFlow = $cashFlowData['netCashFlow'];
 
         $filename = "cash_flow_{$displayMode}_{$tanggalAwal}_{$tanggalAkhir}";
 
         if ($format === 'pdf') {
-            $pdf = Pdf::loadView('arus_kas.export_pdf', compact('rows', 'tanggalAwal', 'tanggalAkhir', 'displayMode'))
-                ->setPaper('A4', 'landscape');
+            $pdf = Pdf::loadView('arus_kas.export_pdf', compact(
+                'rows',
+                'tanggalAwal',
+                'tanggalAkhir',
+                'displayMode',
+                'aktivitasData',
+                'saldoAwal',
+                'saldoAkhir',
+                'grandCashIn',
+                'grandCashOut',
+                'netCashFlow'
+            ))->setPaper('A4', 'landscape');
+
             return $pdf->download("{$filename}.pdf");
         }
 
         // Excel export
         return Excel::download(
-            new \App\Exports\ArusKasExport($rows, $tanggalAwal, $tanggalAkhir, $displayMode),
+            new \App\Exports\ArusKasExport(
+                $rows,
+                $tanggalAwal,
+                $tanggalAkhir,
+                $displayMode,
+                $aktivitasData,
+                $saldoAwal,
+                $saldoAkhir,
+                $grandCashIn,
+                $grandCashOut,
+                $netCashFlow
+            ),
             "{$filename}.xlsx"
         );
     }

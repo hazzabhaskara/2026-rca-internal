@@ -59,9 +59,9 @@ class IncomeStatementController extends Controller
             if ($account->level_akun === 'GROUP ACCOUNT') {
                 // Tutup account sebelumnya jika ada (baik dengan/tanpa sub_accounts)
                 if ($currentAccount) {
-                    // Jika ada sub_accounts, hitung ulang saldo dari sub_accounts
+                    // Jika ada sub_accounts, jumlahkan saldo parent sendiri dengan saldo sub_accounts
                     if (!empty($currentAccount['sub_accounts'])) {
-                        $currentAccount['saldo_account'] = array_sum(array_column($currentAccount['sub_accounts'], 'saldo'));
+                        $currentAccount['saldo_account'] = ($currentAccount['saldo_account'] ?? 0) + array_sum(array_column($currentAccount['sub_accounts'], 'saldo'));
                     }
                     // Tambahkan ke group jika saldo tidak 0
                     if ($currentAccount['saldo_account'] != 0 && $currentGroup) {
@@ -94,9 +94,9 @@ class IncomeStatementController extends Controller
             if ($account->level_akun === 'ACCOUNT') {
                 // Tutup account sebelumnya jika ada (baik dengan/tanpa sub_accounts)
                 if ($currentAccount) {
-                    // Jika ada sub_accounts, hitung ulang saldo dari sub_accounts
+                    // Jika ada sub_accounts, jumlahkan saldo parent sendiri dengan saldo sub_accounts
                     if (!empty($currentAccount['sub_accounts'])) {
-                        $currentAccount['saldo_account'] = array_sum(array_column($currentAccount['sub_accounts'], 'saldo'));
+                        $currentAccount['saldo_account'] = ($currentAccount['saldo_account'] ?? 0) + array_sum(array_column($currentAccount['sub_accounts'], 'saldo'));
                     }
                     // Tambahkan ke group jika saldo tidak 0
                     if ($currentAccount['saldo_account'] != 0 && $currentGroup) {
@@ -170,9 +170,9 @@ class IncomeStatementController extends Controller
 
         // Tutup account terakhir jika ada (baik dengan/tanpa sub_accounts)
         if ($currentAccount) {
-            // Jika ada sub_accounts, hitung ulang saldo dari sub_accounts
+            // Jika ada sub_accounts, jumlahkan saldo parent sendiri dengan saldo sub_accounts
             if (!empty($currentAccount['sub_accounts'])) {
-                $currentAccount['saldo_account'] = array_sum(array_column($currentAccount['sub_accounts'], 'saldo'));
+                $currentAccount['saldo_account'] = ($currentAccount['saldo_account'] ?? 0) + array_sum(array_column($currentAccount['sub_accounts'], 'saldo'));
             }
             // Tambahkan ke group jika saldo tidak 0
             if ($currentAccount['saldo_account'] != 0 && $currentGroup) {
@@ -406,7 +406,7 @@ class IncomeStatementController extends Controller
             if ($account->level_akun === 'GROUP ACCOUNT') {
                 if ($currentAccount) {
                     if (!empty($currentAccount['sub_accounts'])) {
-                        $currentAccount['saldo_account'] = array_sum(array_column($currentAccount['sub_accounts'], 'saldo'));
+                        $currentAccount['saldo_account'] = ($currentAccount['saldo_account'] ?? 0) + array_sum(array_column($currentAccount['sub_accounts'], 'saldo'));
                     }
                     if ($currentAccount['saldo_account'] != 0 && $currentGroup) {
                         $currentGroup['accounts'][] = $currentAccount;
@@ -435,7 +435,7 @@ class IncomeStatementController extends Controller
             if ($account->level_akun === 'ACCOUNT') {
                 if ($currentAccount) {
                     if (!empty($currentAccount['sub_accounts'])) {
-                        $currentAccount['saldo_account'] = array_sum(array_column($currentAccount['sub_accounts'], 'saldo'));
+                        $currentAccount['saldo_account'] = ($currentAccount['saldo_account'] ?? 0) + array_sum(array_column($currentAccount['sub_accounts'], 'saldo'));
                     }
                     if ($currentAccount['saldo_account'] != 0 && $currentGroup) {
                         $currentGroup['accounts'][] = $currentAccount;
@@ -502,7 +502,7 @@ class IncomeStatementController extends Controller
 
         if ($currentAccount) {
             if (!empty($currentAccount['sub_accounts'])) {
-                $currentAccount['saldo_account'] = array_sum(array_column($currentAccount['sub_accounts'], 'saldo'));
+                $currentAccount['saldo_account'] = ($currentAccount['saldo_account'] ?? 0) + array_sum(array_column($currentAccount['sub_accounts'], 'saldo'));
             }
             if ($currentAccount['saldo_account'] != 0 && $currentGroup) {
                 $currentGroup['accounts'][] = $currentAccount;

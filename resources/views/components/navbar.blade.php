@@ -533,7 +533,7 @@
                                             @can('payment_expense.access')
                                                 <a href="{{ route('payment_expense.index') }}"
                                                     class="block px-4 py-2 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Payment
-                                                    Expense
+                                                    Expense / Kas Keluar
                                                 </a>
                                             @endcan
                                         </div>
@@ -1474,6 +1474,16 @@
                                     <a href="{{ route('unassigned_watchdog.index') }}"
                                         class="block px-4 py-2 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Unassigned Watchdog (Audit Non-Dept)</a>
                                 @endcan
+                                @can('assigned_watchdog.access')
+                                    <a href="{{ route('assigned_watchdog.index') }}"
+                                        class="block px-4 py-2 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Assigned Watchdog (Audit Departemen)</a>
+                                @endcan
+                                @can('journal_entry.access')
+                                    <a href="{{ route('journal_audit.index') }}"
+                                        class="block px-4 py-2 text-indigo-700 font-medium hover:bg-indigo-50 hover:text-indigo-900 transition-colors duration-150">
+                                        <i class="fas fa-scale-balanced mr-1 text-indigo-500"></i> Audit &amp; Kamus Akun Jurnal
+                                    </a>
+                                @endcan
 
 
 
@@ -1553,6 +1563,17 @@
                                         class="block px-2 py-1 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Unassigned Watchdog (Audit Non-Dept)
                                     </a>
                                 @endcan
+                                @can('assigned_watchdog.access')
+                                    <a href="{{ route('assigned_watchdog.index') }}"
+                                        class="block px-2 py-1 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Assigned Watchdog (Audit Departemen)
+                                    </a>
+                                @endcan
+                                @can('journal_entry.access')
+                                    <a href="{{ route('journal_audit.index') }}"
+                                        class="block px-2 py-1 text-indigo-700 font-medium hover:bg-indigo-50 hover:text-indigo-900 transition-colors duration-150">
+                                        <i class="fas fa-scale-balanced mr-1 text-indigo-500"></i> Audit &amp; Kamus Akun Jurnal
+                                    </a>
+                                @endcan
 
                             </div>
                         </div>
@@ -1612,6 +1633,10 @@
                                                 class="block px-4 py-2 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Fiscal
                                                 Account
                                                 Persamaan</a>
+                                        @endcan
+                                        @can('fiscal.access')
+                                            <a href="{{ route('fiscal_setting.index') }}"
+                                                class="block px-4 py-2 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Fiscal Settings (Opsi Fisrec)</a>
                                         @endcan
                                     </div>
 
@@ -1772,7 +1797,7 @@
 
                 </div>
                 @php
-                    $user = Auth::user()->name;
+                    $user = Auth::check() ? Auth::user()->name : 'User';
                 @endphp
                 <!-- Profile Section -->
                 <div class="hidden md:flex md:items-center">
@@ -2213,6 +2238,13 @@
                                                     class="block px-4 py-2 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Payments
                                                 </a>
                                             @endcan
+
+                                            @can('payment_expense.access')
+                                                <a href="{{ route('payment_expense.index') }}"
+                                                    class="block px-4 py-2 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Payment
+                                                    Expense / Kas Keluar
+                                                </a>
+                                            @endcan
                                         </div>
                                     </div>
                                 @endcan
@@ -2409,6 +2441,11 @@
                             </button>
 
                             <div x-show="open" x-collapse class="pl-4 space-y-1">
+                                @can('linked_account_closing.access')
+                                    <a href="{{ route('linkedAccount_closing.index') }}"
+                                        class="block px-4 py-2 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Linked
+                                        Account</a>
+                                @endcan
                                 @can('closing_harian.create')
                                     <a href="{{ route('closing_harian.create') }}"
                                         class="block px-4 py-2 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Create
@@ -2873,6 +2910,16 @@
                                                 <a href="{{ route('unassigned_watchdog.index') }}"
                                                     class="block px-4 py-2 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Unassigned Watchdog (Audit Non-Dept)</a>
                                             @endcan
+                                            @can('assigned_watchdog.access')
+                                                <a href="{{ route('assigned_watchdog.index') }}"
+                                                    class="block px-4 py-2 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Assigned Watchdog (Audit Departemen)</a>
+                                            @endcan
+                                            @can('journal_entry.access')
+                                                <a href="{{ route('journal_audit.index') }}"
+                                                    class="block px-4 py-2 text-indigo-700 font-medium hover:bg-indigo-50 hover:text-indigo-900 transition-colors duration-150">
+                                                    <i class="fas fa-scale-balanced mr-1 text-indigo-500"></i> Audit &amp; Kamus Akun Jurnal
+                                                </a>
+                                            @endcan
                                         </div>
                                     </div>
                                 @endcan
@@ -2939,6 +2986,17 @@
                                 @can('unassigned_watchdog.access')
                                     <a href="{{ route('unassigned_watchdog.index') }}"
                                         class="block px-2 py-1 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Unassigned Watchdog (Audit Non-Dept)
+                                    </a>
+                                @endcan
+                                @can('assigned_watchdog.access')
+                                    <a href="{{ route('assigned_watchdog.index') }}"
+                                        class="block px-2 py-1 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150">Assigned Watchdog (Audit Departemen)
+                                    </a>
+                                @endcan
+                                @can('journal_entry.access')
+                                    <a href="{{ route('journal_audit.index') }}"
+                                        class="block px-2 py-1 text-indigo-700 font-medium hover:bg-indigo-50 hover:text-indigo-900 transition-colors duration-150">
+                                        <i class="fas fa-scale-balanced mr-1 text-indigo-500"></i> Audit &amp; Kamus Akun Jurnal
                                     </a>
                                 @endcan
 

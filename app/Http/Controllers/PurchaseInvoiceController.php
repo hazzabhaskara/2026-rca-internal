@@ -208,6 +208,8 @@ class PurchaseInvoiceController extends Controller
             // ==============================================================
             $purchaseInvoice = \App\PurchaseInvoice::create([
                 'invoice_number'      => $invoice_number,
+                'nomor_faktur_pajak'  => $request->nomor_faktur_pajak,
+                'is_non_faktur_pajak' => $request->has('is_non_faktur_pajak') ? 1 : 0,
                 'date_invoice'        => $request->date_invoice,
                 'shipping_date'       => $request->shipping_date,
                 'vendor_id'           => $request->vendor_id,
@@ -224,6 +226,33 @@ class PurchaseInvoiceController extends Controller
                 'status_purchase' => $statusPurchase
             ]);
             // dump('📘 Purchase Invoice tersimpan:', $purchaseInvoice->toArray());
+
+            // 📎 Upload Lampiran Digital (Pilar 1 Automasi)
+            if ($request->hasFile('file_invoice')) {
+                $file = $request->file('file_invoice');
+                $path = $file->store('purchase_invoice_documents', 'public');
+                \App\PurchaseInvoiceDocument::create([
+                    'purchase_invoice_id' => $purchaseInvoice->id,
+                    'document_name' => 'Foto Invoice / Nota Fisik',
+                    'file_path' => $path,
+                    'file_type' => $file->getClientOriginalExtension(),
+                    'file_size' => $file->getSize(),
+                    'description' => 'Bukti transaksi pembelian fisik',
+                ]);
+            }
+
+            if ($request->hasFile('file_faktur_pajak')) {
+                $file = $request->file('file_faktur_pajak');
+                $path = $file->store('purchase_invoice_documents', 'public');
+                \App\PurchaseInvoiceDocument::create([
+                    'purchase_invoice_id' => $purchaseInvoice->id,
+                    'document_name' => 'Faktur Pajak Coretax DJP',
+                    'file_path' => $path,
+                    'file_type' => $file->getClientOriginalExtension(),
+                    'file_size' => $file->getSize(),
+                    'description' => 'Faktur Pajak Masukan Resmi DJP (No: ' . ($request->nomor_faktur_pajak ?? '-') . ')',
+                ]);
+            }
 
             // 3b️⃣ Update status PO
             if ($request->purchase_order_id) {
@@ -571,6 +600,8 @@ class PurchaseInvoiceController extends Controller
 
             // 4) Update header
             $purchaseInvoice->update([
+                'nomor_faktur_pajak'  => $request->nomor_faktur_pajak,
+                'is_non_faktur_pajak' => $request->has('is_non_faktur_pajak') ? 1 : 0,
                 'date_invoice'        => $request->date_invoice,
                 'shipping_date'       => $request->shipping_date,
                 'vendor_id'           => $request->vendor_id,
@@ -586,6 +617,33 @@ class PurchaseInvoiceController extends Controller
                 'messages'            => $request->messages,
                 'status_purchase' => $statusPurchase
             ]);
+
+            // 📎 Upload Lampiran Digital (Pilar 1 Automasi)
+            if ($request->hasFile('file_invoice')) {
+                $file = $request->file('file_invoice');
+                $path = $file->store('purchase_invoice_documents', 'public');
+                \App\PurchaseInvoiceDocument::create([
+                    'purchase_invoice_id' => $purchaseInvoice->id,
+                    'document_name' => 'Foto Invoice / Nota Fisik',
+                    'file_path' => $path,
+                    'file_type' => $file->getClientOriginalExtension(),
+                    'file_size' => $file->getSize(),
+                    'description' => 'Bukti transaksi pembelian fisik',
+                ]);
+            }
+
+            if ($request->hasFile('file_faktur_pajak')) {
+                $file = $request->file('file_faktur_pajak');
+                $path = $file->store('purchase_invoice_documents', 'public');
+                \App\PurchaseInvoiceDocument::create([
+                    'purchase_invoice_id' => $purchaseInvoice->id,
+                    'document_name' => 'Faktur Pajak Coretax DJP',
+                    'file_path' => $path,
+                    'file_type' => $file->getClientOriginalExtension(),
+                    'file_size' => $file->getSize(),
+                    'description' => 'Faktur Pajak Masukan Resmi DJP (No: ' . ($request->nomor_faktur_pajak ?? '-') . ')',
+                ]);
+            }
 
             // dump("Header diupdate:", $purchaseInvoice->toArray());
 
