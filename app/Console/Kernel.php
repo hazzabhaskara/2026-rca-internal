@@ -13,7 +13,7 @@ class Kernel extends ConsoleKernel
      * @var array
      */
     protected $commands = [
-        //
+        \App\Console\Commands\GenerateAssetDepreciationCommand::class,
     ];
 
     /**
@@ -24,7 +24,8 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule)
     {
-        // $schedule->command('inspire')->hourly();
+        // Jalankan penyusutan & amortisasi aset tetap otomatis setiap akhir bulan
+        $schedule->command('asset:depreciate')->monthlyOn(28, '23:30');
     }
 
     /**

@@ -399,15 +399,9 @@ class SalesInvoiceController extends Controller
 
     protected function adjustItemQuantity($itemId, $locationId, $qtyChange, $valueChange, $isSale = false)
     {
-        // ambil data unit item
-        $unit = \App\ItemUnit::where('item_id', $itemId)->first();
-
-        if ($isSale && $unit && !$unit->selling_same_as_stocking) {
-            // konversi satuan jual ke satuan stok
-            $qtyChange = $qtyChange * $unit->selling_relationship;
-            $valueChange = $valueChange * $unit->selling_relationship;
-        }
-
+        // Catatan REA Fix: $qtyChange dan $valueChange sudah dikonversi ke satuan dasar (stocking unit)
+        // pada pemanggil (store, update, destroy). Jangan dikalikan ulang dengan selling_relationship
+        // agar tidak terjadi double unit conversion (pemotongan stok & HPP kuadratik).
         $itemQty = \App\ItemQuantities::firstOrCreate(
             ['item_id' => $itemId, 'location_id' => $locationId],
             ['on_hand_qty' => 0, 'on_hand_value' => 0]
@@ -547,22 +541,30 @@ class SalesInvoiceController extends Controller
 
             $locationId = $salesInvoice->location_id;
 
-            // 🔁 Kembalikan stok lama
+            // 🔁 Kembalikan stok lama (dengan konversi ke satuan stok dasar yang konsisten)
             foreach ($salesInvoice->details as $oldDetail) {
-                $unitCost = $this->getUnitCost($oldDetail->item_id, $locationId);
-                $valueRestore = $unitCost * $oldDetail->quantity;
+                $oldQty = (float) $oldDetail->quantity;
+                $oldUnit = $oldDetail->unit ?? null;
+                $oldItemUnit = \App\ItemUnit::where('item_id', $oldDetail->item_id)->first();
+                $qtyRestore = $oldQty;
 
-                // dump("🔁 Kembalikan stok lama:", [
-                //     'item_id'   => $oldDetail->item_id,
-                //     'qty'       => $oldDetail->quantity,
-                //     'unit_cost' => $unitCost,
-                //     'value'     => $valueRestore,
-                // ]);
+                if ($oldItemUnit) {
+                    if ($oldUnit === $oldItemUnit->unit_of_measure) {
+                        $qtyRestore = $oldQty;
+                    } elseif ($oldUnit === $oldItemUnit->selling_unit) {
+                        $qtyRestore = $oldQty * max(1, (float) $oldItemUnit->selling_relationship);
+                    } elseif ($oldUnit === $oldItemUnit->buying_unit) {
+                        $qtyRestore = $oldQty * max(1, (float) $oldItemUnit->buying_relationship);
+                    }
+                }
+
+                $unitCost = $this->getUnitCost($oldDetail->item_id, $locationId);
+                $valueRestore = $unitCost * $qtyRestore;
 
                 $this->adjustItemQuantity(
                     $oldDetail->item_id,
                     $locationId,
-                    $oldDetail->quantity,
+                    $qtyRestore,
                     $valueRestore,
                     true
                 );

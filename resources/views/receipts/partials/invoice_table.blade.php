@@ -16,6 +16,8 @@
                 <td>
                     <input type="hidden" name="details[{{ $i }}][sales_invoice_id]"
                         value="{{ $inv->id }}">
+                    <input type="hidden" name="details[{{ $i }}][invoice_date]"
+                        value="{{ $inv->invoice_date }}">
                     {{ $inv->invoice_number }}
                 </td>
                 <td>{{ \Carbon\Carbon::parse($inv->invoice_date)->format('d-m-Y') }}</td>
@@ -101,10 +103,6 @@
         document.getElementById("total-paid").innerText = totalPaid.toFixed(2);
     }
 
-    document.addEventListener("input", recalc);
-    recalc();
-
-    // Jalankan saat ada input perubahan
     document.addEventListener("input", recalc);
     recalc();
 </script>

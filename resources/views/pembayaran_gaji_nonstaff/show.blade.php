@@ -34,7 +34,7 @@
                                     <td class="px-4 py-2 border text-center">{{ $detail->jumlah_hari }}</td>
                                     <td class="px-4 py-2 border text-right">{{ number_format($detail->potongan, 2) }}</td>
                                     <td class="px-4 py-2 border text-right">
-                                        {{ number_format($detail->nilai * $detail->jumlah_hari + $detail->potongan * $detail->jumlah_hari, 2) }}
+                                        {{ number_format(($detail->nilai * $detail->jumlah_hari) - ($detail->potongan * $detail->jumlah_hari), 2) }}
                                     </td>
                                 </tr>
                             @endforeach

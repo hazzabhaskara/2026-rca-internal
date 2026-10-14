@@ -5,7 +5,7 @@
         <div class="max-w-full mx-auto sm:px-6 lg:px-8">
             <div class="bg-white shadow-md rounded-lg p-6">
                 <form method="POST"
-                    action="{{ isset($asset) ? route('tangibble_asset.update', $asset->id) : route('tangible_asset.store') }}">
+                    action="{{ isset($asset) ? route('tangible_asset.update', $asset->id) : route('tangible_asset.store') }}">
                     @csrf
                     @if (isset($asset))
                         @method('PUT')
