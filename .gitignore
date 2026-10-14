@@ -37,3 +37,8 @@ yarn-error.log
 !/storage/framework/testing/.gitignore
 /storage/logs/*
 !/storage/logs/.gitignore
+
+# Antigravity x Gemini Sync Artifacts
+rea_erp_complete_fixes.zip
+antigravity_rea_patch_bundle.json
+apply_all_fixes.sh
